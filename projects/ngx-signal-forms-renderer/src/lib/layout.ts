@@ -1,7 +1,8 @@
-import { computed, Signal } from '@angular/core';
+import { computed, Signal, Type } from '@angular/core';
 import { FieldTree, isFieldTree } from '@angular/forms/signals';
 import {
   ArrayNode,
+  ContentNode,
   ControlNode,
   GroupNode,
   LayoutBranch,
@@ -29,6 +30,32 @@ export function control<T>(field: FieldTree<T>, options?: LayoutNodeOptions): Co
 
 /** Options for group() and array() builders. */
 export type ContainerOptions = LayoutNodeOptions;
+
+/** Options for a library-iterated array(): container options plus an `empty` node. */
+export interface ArrayOptions extends ContainerOptions {
+  /** Rendered (as the only child) while the array has no items — the layout's `@empty`. */
+  empty?: LayoutNode;
+}
+
+// ── content() ──────────────────────────────────────────────────────────────
+
+/**
+ * Creates a ContentNode: a component that isn't bound to a field (a heading, help text, an
+ * alert, form-level errors, a derived value). Pass a component or a type registered via
+ * `provideSignalFormsRenderer()`. It receives only the given `bindings`.
+ *
+ * @example
+ * content('heading', { bindings: [inputBinding('text', () => 'Billing')] })
+ * content(FormErrors, { bindings: [inputBinding('errors', () => userForm().errorSummary())] })
+ */
+export function content(
+  typeOrComponent: string | Type<unknown>,
+  options?: Pick<LayoutNodeOptions, 'bindings' | 'directives'>,
+): ContentNode {
+  const resolution =
+    typeof typeOrComponent === 'string' ? { type: typeOrComponent } : { component: typeOrComponent };
+  return { kind: 'content', ...options, ...resolution };
+}
 
 // ── group() ────────────────────────────────────────────────────────────────
 
@@ -92,14 +119,17 @@ export function group<T>(
  *
  * // Library iterates — per-item fn + wrapper component that receives children
  * array(f.items, { component: SortableList, bindings: [outputBinding('moved', onMove)] }, (item) => group(item, ...))
+ *
+ * // Library iterates — with a node rendered while there are no items
+ * array(f.items, { empty: content('hint', { bindings: [inputBinding('text', () => 'No items yet')] }) }, (item) => ...)
  */
 export function array(children: LayoutNode[], options?: ContainerOptions): ArrayNode;
 export function array<T>(field: FieldTree<T[]>, options?: ContainerOptions): ArrayNode;
 export function array<T>(field: FieldTree<T[]>, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
-export function array<T>(field: FieldTree<T[]>, options: ContainerOptions, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
+export function array<T>(field: FieldTree<T[]>, options: ArrayOptions, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
 export function array<T>(
   fieldOrChildren: FieldTree<T[]> | LayoutNode[],
-  optionsOrFn?: ContainerOptions | ((item: FieldTree<T>) => LayoutNode),
+  optionsOrFn?: ArrayOptions | ((item: FieldTree<T>) => LayoutNode),
   maybeFn?: (item: FieldTree<T>) => LayoutNode,
 ): ArrayNode {
   if (Array.isArray(fieldOrChildren)) {

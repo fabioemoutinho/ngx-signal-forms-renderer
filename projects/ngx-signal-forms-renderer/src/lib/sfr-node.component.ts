@@ -56,7 +56,7 @@ export class SfrNodeComponent {
 
   protected readonly isHidden = computed(() => {
     const node = this.node();
-    if (isConditional(node)) return false;
+    if (isConditional(node) || node.kind === 'content') return false;
     // Defer to the related field's native hidden() (signal forms schema rule): always present
     // for controls, optional for groups/arrays that map to a field.
     return node.field?.().hidden() ?? false;
@@ -115,7 +115,9 @@ export class SfrNodeComponent {
    * - group: `children` (the keyed record)
    * - array (static ordered nodes): `children` (the node's LayoutNode[])
    * - array (renderer-owned, no itemLayout): `field`
-   * - array (library-iterated): `children` (the per-item LayoutNodes)
+   * - array (library-iterated): `children` (the per-item LayoutNodes, or `[empty]` while there
+   *   are no items)
+   * - content: none — only the consumer's bindings
    *
    * Each reserved input is bound only if the component declares it, so any component can opt
    * out of any of them without a "binding to unknown input" error.
@@ -163,8 +165,8 @@ export class SfrNodeComponent {
   private readonly arrayItems = computed((): LayoutNode[] => {
     const node = this.node();
     if (node.kind !== 'array' || !node.field || !node.itemLayout) return [];
-    const { field, itemLayout } = node;
-    return Array.from(field, (itemField) => {
+    const { field, itemLayout, empty } = node;
+    const itemNodes = Array.from(field, (itemField) => {
       const key = itemField as object;
       let item = this._items.get(key);
       if (!item) {
@@ -183,6 +185,8 @@ export class SfrNodeComponent {
       item.last = itemNode;
       return itemNode;
     });
+    // The same `empty` node each time, so it isn't recreated while the array stays empty.
+    return itemNodes.length === 0 && empty ? [empty] : itemNodes;
   });
 
   /**
@@ -239,13 +243,14 @@ export class SfrNodeComponent {
     return [];
   });
 
-  /** Dev-mode warning when a control node has no component resolved. */
-  readonly #warnMissingControl = effect(() => {
-    if (this.node().kind === 'control' && !this.resolvedComponent()) {
+  /** Dev-mode warning when a control or content node has no component resolved. */
+  readonly #warnMissingComponent = effect(() => {
+    const { kind } = this.node();
+    if ((kind === 'control' || kind === 'content') && !this.resolvedComponent()) {
       if (typeof ngDevMode === 'undefined' || ngDevMode) {
         console.warn(
-          `[ngx-signal-forms-renderer] No component resolved for control node.`,
-          `Provide a 'component' or 'type' in the control() call, or register a type in provideSignalFormsRenderer().`,
+          `[ngx-signal-forms-renderer] No component resolved for ${kind} node.`,
+          `Provide a 'component' or 'type' in the ${kind}() call, or register a type in provideSignalFormsRenderer().`,
         );
       }
     }

@@ -39,7 +39,7 @@ provideSignalFormsRenderer({
 
 ```typescript
 import { inputBinding } from '@angular/core';
-import { layout, control, group, array, when, switchCase } from 'ngx-signal-forms-renderer';
+import { layout, control, group, array, content, when, switchCase } from 'ngx-signal-forms-renderer';
 
 // control(fieldRef, options?) — renders a form control
 control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
@@ -56,6 +56,10 @@ group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
 array(f.addresses, (addr) => group(addr, (a) => ({ street: control(a.street) })))
 array(f.items, { component: ItemList })            // renderer-owned: component receives the field
 array([control(f.step1), control(f.step2)])        // static ordered nodes
+array(f.items, { empty: content('hint') }, itemLayout)  // `empty` renders while there are no items
+
+// content(typeOrComponent, { bindings?, directives? }) — a component not bound to a field
+content('heading', { bindings: [inputBinding('text', () => 'Billing')] })
 
 // when(condition, () => nodes, () => elseNodes?) — conditional layout (the layout's @if)
 when(isBusiness, () => [control(f.company)], () => control(f.birthDate))

@@ -25,12 +25,18 @@ may contain breaking changes; they are always called out under **Breaking**.
   when(isBusiness, () => group({ … }, { component: Card }))
   ```
 
-- `LayoutNode` now also includes `WhenNode` and `SwitchCaseNode`. An exhaustive
+- `LayoutNode` now also includes `ContentNode`, `WhenNode` and `SwitchCaseNode`. An exhaustive
   `switch (node.kind)` over layout nodes needs the new cases, and wrapper components that inspect
   their children (e.g. `children().x.field`) can now meet these nodes, which have no `field`.
 
 ### Added
 
+- `content(typeOrComponent, { bindings, directives })`: a node for a component that isn't bound to
+  a field — headings, help text, alerts, form-level errors, derived values. It receives only its
+  own bindings. A dev-mode warning is logged when no component resolves, as for controls.
+- An `empty` option on library-iterated arrays (`array(field, { empty }, itemLayout)`): a node
+  rendered as the only child while the array has no items, the layout's `@empty`. Its type,
+  `ArrayOptions`, extends `ContainerOptions`, so `empty` is a type error on other arrays and groups.
 - `when(condition, () => nodes, () => elseNodes)`: conditional layout, the layout's
   `@if`. `condition` is a signal or function returning a boolean, or a field — `when(f.company, …)`
   renders while that field is visible in the schema. Branches are builder functions, built only

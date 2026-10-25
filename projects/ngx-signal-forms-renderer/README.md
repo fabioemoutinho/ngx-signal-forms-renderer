@@ -122,6 +122,8 @@ component you write gets the real `FieldTree`, so it keeps full access to signal
 - **`group`** — a keyed collection of nodes (`Record<string, LayoutNode>`), optionally wrapped in a
   component. Can be data-driven from a sub-object field.
 - **`array`** — a list of nodes: static, renderer-owned, or library-iterated from an array field.
+- **`content`** — a component that isn't bound to a field: a heading, help text, an alert,
+  form-level errors, a derived value.
 - **`when`** / **`switchCase`** — conditional layout (the layout's `@if` / `@switch`). They render
   the active branch's nodes and no element of their own.
 
@@ -185,7 +187,8 @@ Pair the branch with `hidden()` / `applyWhenValue()` in the schema when its fiel
 ## API Reference
 
 You build layouts with the functions below — you don't construct node objects by hand. `control`,
-`group` and `array` accept the same **options** object (`when` and `switchCase` take none):
+`group` and `array` accept the same **options** object (`content` takes only `bindings` and
+`directives`; `when` and `switchCase` take none):
 
 | Option       | Type                                                | Purpose                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------- |
@@ -254,11 +257,29 @@ wrapper component as its `children`. Use when the list needs UI around each item
 array(f.items, { component: SortableList }, (item) => group(item, (g) => ({ name: control(g.name) })));
 ```
 
+Library-iterated arrays (with or without a wrapper) also take an **`empty`** node, rendered as the only
+child while the array has no items — the layout's `@empty`:
+
+```typescript
+array(f.items, { empty: content('hint', { bindings: [inputBinding('text', () => 'No items yet')] }) }, itemLayout);
+```
+
 **Renderer-owned** — the component receives the array `field` itself and does its own iteration and
 mutation. Use when you want full control over how the array renders and changes.
 
 ```typescript
 array(f.items, { component: ItemsListComponent });
+```
+
+#### `content(typeOrComponent, { bindings?, directives? })`
+
+A component that isn't bound to a field. Pass a component or a registered type. It receives only the
+`bindings` you give it — the renderer binds none of its own inputs. Read form state inside a binding
+to show derived values or form-level errors; the component updates in place.
+
+```typescript
+content('heading', { bindings: [inputBinding('text', () => 'Billing')] });
+content(FormErrors, { bindings: [inputBinding('errors', () => userForm().errorSummary())] });
 ```
 
 #### `when(condition, () => nodes, () => elseNodes?)`

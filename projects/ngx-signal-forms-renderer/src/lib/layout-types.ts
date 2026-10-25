@@ -67,6 +67,17 @@ export interface ArrayNode extends LayoutNodeOptions {
   readonly field?: FieldTree<any[]>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly itemLayout?: (item: FieldTree<any>) => LayoutNode;
+  /** Library-iterated arrays: rendered (as the only child) while the array has no items. */
+  readonly empty?: LayoutNode;
+}
+
+/**
+ * A content node: a component that isn't bound to a field — a heading, help text, an alert,
+ * form-level errors, a derived value. It receives only its own `bindings`; the renderer binds no
+ * inputs of its own. Renders nothing when no component is resolved.
+ */
+export interface ContentNode extends LayoutNodeOptions {
+  readonly kind: 'content';
 }
 
 /**
@@ -100,4 +111,10 @@ export interface SwitchCaseNode {
 }
 
 /** Union of all layout node types. */
-export type LayoutNode = ControlNode | GroupNode | ArrayNode | WhenNode | SwitchCaseNode;
+export type LayoutNode =
+  | ControlNode
+  | GroupNode
+  | ArrayNode
+  | ContentNode
+  | WhenNode
+  | SwitchCaseNode;

@@ -9,14 +9,15 @@ export type {
   ControlNode,
   GroupNode,
   ArrayNode,
+  ContentNode,
   WhenNode,
   SwitchCaseNode,
   LayoutBranch,
 } from './lib/layout-types';
 
 // Builder functions
-export { layout, control, group, array, when, switchCase } from './lib/layout';
-export type { ContainerOptions, LayoutSignal, SwitchCaseKey } from './lib/layout';
+export { layout, control, group, array, content, when, switchCase } from './lib/layout';
+export type { ArrayOptions, ContainerOptions, LayoutSignal, SwitchCaseKey } from './lib/layout';
 
 // Provider
 export { provideSignalFormsRenderer, SIGNAL_FORMS_RENDERER_TYPE_REGISTRY } from './lib/provider';

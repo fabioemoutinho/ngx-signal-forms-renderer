@@ -54,6 +54,18 @@ export class TrackedControl extends Tracked {
   readonly label = input('');
 }
 
+/**
+ * Field-less content: renders its `text`. Declares `field`/`state`/`children` too, to prove a
+ * content node never receives the renderer's reserved inputs.
+ */
+@Component({ selector: 'test-content', template: '{{ text() }}' })
+export class TextContent extends Tracked {
+  readonly text = input('');
+  readonly field = input<unknown>();
+  readonly state = input<unknown>();
+  readonly children = input<unknown>();
+}
+
 /** Checkbox-style custom control (`checked` model instead of `value`). */
 @Component({ selector: 'test-checkbox', template: '{{ checked() }}' })
 export class CheckboxControl extends Tracked implements FormCheckboxControl {
