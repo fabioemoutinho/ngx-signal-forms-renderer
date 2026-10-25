@@ -14,7 +14,7 @@ import {
   Type,
 } from '@angular/core';
 import { FieldTree, FormField } from '@angular/forms/signals';
-import { LayoutNode } from './layout-types';
+import { LayoutBranch, LayoutNode, SwitchCaseNode, WhenNode } from './layout-types';
 import { SIGNAL_FORMS_RENDERER_TYPE_REGISTRY } from './provider';
 import { SfrComponentOutletDirective } from './sfr-component-outlet.directive';
 import { LAYOUT_RERUN_ADVICE, warnOnce } from './dev-warnings';
@@ -56,6 +56,7 @@ export class SfrNodeComponent {
 
   protected readonly isHidden = computed(() => {
     const node = this.node();
+    if (isRegion(node)) return false;
     // A custom layout-level hidden signal always wins.
     if (node.hidden) return node.hidden();
     // Otherwise defer to the related field's native hidden() (signal forms schema rule):
@@ -64,9 +65,11 @@ export class SfrNodeComponent {
   });
 
   /** Resolved component type (explicit `component`, else `type` via the registry), or null for fallback rendering. */
-  protected readonly resolvedComponent = computed(
-    (): Type<unknown> | null => this.node().component ?? this.registry[this.node().type!] ?? null,
-  );
+  protected readonly resolvedComponent = computed((): Type<unknown> | null => {
+    const node = this.node();
+    if (isRegion(node)) return null;
+    return node.component ?? this.registry[node.type!] ?? null;
+  });
 
   /**
    * Public inputs of the resolved component and whether it is a form control `FormField` can
@@ -94,6 +97,7 @@ export class SfrNodeComponent {
   protected readonly directives = computed(
     (): (Type<unknown> | DirectiveWithBindings<unknown>)[] | undefined => {
       const node = this.node();
+      if (isRegion(node)) return undefined;
       const result: (Type<unknown> | DirectiveWithBindings<unknown>)[] = [];
       if (node.kind === 'control' && this.componentIo()?.isFormControl) {
         const field = node.field;
@@ -120,6 +124,7 @@ export class SfrNodeComponent {
    */
   protected readonly bindings = computed((): Binding[] => {
     const node = this.node();
+    if (isRegion(node)) return [];
     const io = this.componentIo();
     const reserved: Binding[] = [];
     const bind = (name: string, value: () => unknown) => {
@@ -182,9 +187,55 @@ export class SfrNodeComponent {
     });
   });
 
-  /** Children to render when no wrapper component is resolved (groups/arrays only). */
+  /**
+   * The active branch of a `when`/`switchCase` node. Compared by identity, so `branchNodes`
+   * re-runs only when a different branch becomes active, not whenever the condition or key is
+   * re-evaluated.
+   */
+  private readonly activeBranch = computed((): LayoutBranch | undefined => {
+    const node = this.node();
+    if (node.kind === 'when') return node.condition() ? node.nodes : node.else;
+    if (node.kind === 'switchCase') {
+      const key = node.key();
+      const name = key == null ? undefined : String(key);
+      return name !== undefined && Object.hasOwn(node.cases, name) ? node.cases[name] : node.default;
+    }
+    return undefined;
+  });
+
+  // The branch last built and what it returned, to warn when a branch re-runs without a flip.
+  #lastBranch?: { branch: LayoutBranch; built: LayoutNode | LayoutNode[] };
+
+  /** The active branch's nodes, built when the branch becomes active. */
+  private readonly branchNodes = computed((): LayoutNode[] => {
+    const branch = this.activeBranch();
+    if (!branch) {
+      this.#lastBranch = undefined;
+      return [];
+    }
+    const built = branch();
+    if (this.#lastBranch?.branch === branch && this.#lastBranch.built !== built) {
+      warnOnce(
+        branch,
+        `A ${this.node().kind}() branch re-ran (it reads a signal) while the same branch stayed ` +
+          'active, so its components were recreated (inputs lose focus and local state). Read ' +
+          'values inside binding closures (inputBinding(name, () => …)), or wrap an accidental ' +
+          'read in untracked(() => …). Shown once per branch function; later re-runs are not ' +
+          'logged.\nRegion:',
+        this.host.nativeElement,
+      );
+    }
+    this.#lastBranch = { branch, built };
+    return Array.isArray(built) ? built : [built];
+  });
+
+  /**
+   * Children to render when no wrapper component is resolved: a group's or array's children, or
+   * a `when`/`switchCase` node's active branch.
+   */
   protected readonly children = computed((): LayoutNode[] => {
     const node = this.node();
+    if (isRegion(node)) return this.branchNodes();
     if (node.kind === 'group') return Object.values(node.children);
     if (node.kind === 'array') return node.itemLayout ? this.arrayItems() : (node.children ?? []);
     return [];
@@ -203,3 +254,7 @@ export class SfrNodeComponent {
   });
 }
 
+/** `when`/`switchCase` nodes: renderless regions with no component, bindings or field. */
+function isRegion(node: LayoutNode): node is WhenNode | SwitchCaseNode {
+  return node.kind === 'when' || node.kind === 'switchCase';
+}

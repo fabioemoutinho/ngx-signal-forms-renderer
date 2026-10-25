@@ -13,8 +13,24 @@ may contain breaking changes; they are always called out under **Breaking**.
 - The minimum supported Angular version is now **22.1.0** (peer dependencies `>=22.1.0`). Angular
   22.2.2 or later is recommended: it fixes a value typed into a `debounce(…, 'blur')` field being
   lost when its control is destroyed, which conditional layouts do.
+- `LayoutNode` now also includes `WhenNode` and `SwitchCaseNode`. An exhaustive
+  `switch (node.kind)` over layout nodes needs the new cases, and wrapper components that inspect
+  their children (e.g. `children().x.field`) can now meet these nodes, which have no `field`.
 
 ### Added
+
+- `when(condition, () => nodes, () => elseNodes)`: a conditional layout region, the layout's
+  `@if`. `condition` is a signal or function returning a boolean, or a field — `when(f.company, …)`
+  renders while that field is visible in the schema. Branches are builder functions, built only
+  when they become active and rebuilt only when the condition flips, so changing the values the
+  condition reads keeps the branch's components. Renders no element of its own.
+- `switchCase(key, cases, { default: () => nodes })`: a multi-branch region, the layout's
+  `@switch`. `key` is a function or a field; the case whose name equals `String(key)` renders, else
+  `default` (also for a `null`/`undefined` key). Case names are typed against the key's values.
+  A case is rebuilt only when the matched case changes.
+- Both are layout only: fields in an inactive branch still validate. Pair them with the schema's
+  `hidden()`/`applyWhenValue()` when they shouldn't. A dev-mode warning is logged when a branch
+  re-runs while it stays active (it reads a signal), since that recreates its components.
 
 - A dev-mode warning when a `layout()` function, or an array's item layout function, re-runs
   because it reads a signal. A re-run builds new nodes, so the components it renders are recreated

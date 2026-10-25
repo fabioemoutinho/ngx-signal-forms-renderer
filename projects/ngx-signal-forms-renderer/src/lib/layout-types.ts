@@ -75,5 +75,35 @@ export interface ArrayNode extends LayoutNodeOptions {
   readonly itemLayout?: (item: FieldTree<any>) => LayoutNode;
 }
 
+/**
+ * Builds the nodes of a `when`/`switchCase` branch. Called only while the branch is active, and
+ * again each time it becomes active.
+ */
+export type LayoutBranch = () => LayoutNode | LayoutNode[];
+
+/**
+ * A conditional region (`when()`): renders `nodes` while `condition` is true, else `else`.
+ * Renders no element of its own. The active branch is built only when the condition flips, so
+ * its components are kept while the condition's inputs change without flipping it.
+ */
+export interface WhenNode {
+  readonly kind: 'when';
+  readonly condition: () => boolean;
+  readonly nodes: LayoutBranch;
+  readonly else?: LayoutBranch;
+}
+
+/**
+ * A multi-branch region (`switchCase()`): renders the case whose name equals `String(key())`,
+ * else `default`. Renders no element of its own. The active case is built only when the
+ * matched case changes.
+ */
+export interface SwitchCaseNode {
+  readonly kind: 'switchCase';
+  readonly key: () => unknown;
+  readonly cases: Readonly<Record<string, LayoutBranch>>;
+  readonly default?: LayoutBranch;
+}
+
 /** Union of all layout node types. */
-export type LayoutNode = ControlNode | GroupNode | ArrayNode;
+export type LayoutNode = ControlNode | GroupNode | ArrayNode | WhenNode | SwitchCaseNode;

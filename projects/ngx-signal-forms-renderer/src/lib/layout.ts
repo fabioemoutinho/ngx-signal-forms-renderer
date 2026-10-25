@@ -1,6 +1,15 @@
 import { computed, Signal } from '@angular/core';
-import { FieldTree } from '@angular/forms/signals';
-import { ArrayNode, ControlNode, GroupNode, LayoutNode, LayoutNodeOptions } from './layout-types';
+import { FieldTree, isFieldTree } from '@angular/forms/signals';
+import {
+  ArrayNode,
+  ControlNode,
+  GroupNode,
+  LayoutBranch,
+  LayoutNode,
+  LayoutNodeOptions,
+  SwitchCaseNode,
+  WhenNode,
+} from './layout-types';
 
 // ── control() ──────────────────────────────────────────────────────────────
 
@@ -106,6 +115,85 @@ export function array<T>(
     return { kind: 'array', ...(optionsOrFn ?? {}), field: fieldOrChildren, itemLayout: maybeFn as ArrayNode['itemLayout'] };
   }
   return { kind: 'array', ...(optionsOrFn ?? {}), field: fieldOrChildren };
+}
+
+// ── when() ─────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a conditional region: renders the `nodes` branch while `condition` is true, else the
+ * `elseNodes` branch (or nothing). Renders no element of its own.
+ *
+ * `condition` is a signal or function returning a boolean, or a field: `when(f.company, …)`
+ * renders while that field is visible (its schema `hidden()` is false), so the schema stays the
+ * single source of truth for conditions that affect validity.
+ *
+ * Branches are builder functions, called only when they become active. A branch is rebuilt (its
+ * components recreated) only when the condition flips, not when the values it reads change
+ * without flipping it. A branch is layout only: fields inside an inactive branch still validate,
+ * so pair it with the schema's `hidden()`/`applyWhen()` when they should not.
+ *
+ * @example
+ * when(isBusiness, () => [control(f.company), control(f.vatId)])
+ * when(() => f.country().value() === 'US', () => control(f.state), () => control(f.region))
+ * when(f.company, () => group({ company: control(f.company) }, { component: CardComponent }))
+ */
+export function when<T>(
+  condition: (() => boolean) | FieldTree<T>,
+  nodes: LayoutBranch,
+  elseNodes?: LayoutBranch,
+): WhenNode {
+  const field = isFieldTree(condition) ? condition : undefined;
+  return {
+    kind: 'when',
+    condition: field ? () => !field().hidden() : (condition as () => boolean),
+    nodes,
+    ...(elseNodes && { else: elseNodes }),
+  };
+}
+
+// ── switchCase() ───────────────────────────────────────────────────────────
+
+/** Case names for a `switchCase()` key: each value as a string, as matched via `String(key)`. */
+export type SwitchCaseKey<K> = K extends string | number | boolean | bigint ? `${K}` : never;
+
+/**
+ * Creates a multi-branch region (the layout's `@switch`): renders the case whose name equals
+ * `String(key)`, else the `default` branch (or nothing). A `null`/`undefined` key renders
+ * `default`. Renders no element of its own.
+ *
+ * `key` is a function, or a field whose value is the key. Case names are typed against the key's
+ * values. Cases are builder functions, built only when they become active; a case is rebuilt only
+ * when the matched case changes. Like `when()`, this is layout only: pair it with the schema's
+ * `applyWhenValue()`/`hidden()` so fields of inactive cases don't validate.
+ *
+ * @example
+ * switchCase(f.plan, {
+ *   business: () => [control(f.company), control(f.vatId)],
+ *   personal: () => control(f.birthDate),
+ * }, { default: () => [] })
+ */
+export function switchCase<F extends () => { value: () => unknown }>(
+  key: F,
+  cases: Partial<Record<SwitchCaseKey<ReturnType<ReturnType<F>['value']>>, LayoutBranch>>,
+  options?: { default?: LayoutBranch },
+): SwitchCaseNode;
+export function switchCase<K extends string | number | boolean | bigint | null | undefined>(
+  key: () => K,
+  cases: Partial<Record<SwitchCaseKey<K>, LayoutBranch>>,
+  options?: { default?: LayoutBranch },
+): SwitchCaseNode;
+export function switchCase(
+  key: (() => unknown) | FieldTree<unknown>,
+  cases: Partial<Record<string, LayoutBranch>>,
+  options?: { default?: LayoutBranch },
+): SwitchCaseNode {
+  const field = isFieldTree(key) ? key : undefined;
+  return {
+    kind: 'switchCase',
+    key: field ? () => field().value() : (key as () => unknown),
+    cases: cases as Record<string, LayoutBranch>,
+    ...(options?.default && { default: options.default }),
+  };
 }
 
 // ── layout() ───────────────────────────────────────────────────────────────
