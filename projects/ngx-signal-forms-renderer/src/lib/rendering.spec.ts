@@ -362,17 +362,16 @@ describe('node kinds', () => {
 // ── Wrapper bindings ──────────────────────────────────────────────────────
 
 describe('wrapper bindings', () => {
-  // KNOWN ISSUE: wrappers are always bound `children` (or `field` for renderer-owned arrays),
-  // even when they don't declare that input, which throws "unknown input" in dev mode.
-  // Flip to `it` once wrapper bindings respect declared inputs, like controls do.
-  it.fails('renders a group wrapper that declares no children input', async () => {
+  // Reserved inputs are bound only when declared, so wrappers that don't need them don't throw
+  // "unknown input" (NG0315) in dev mode.
+  it('renders a group wrapper that declares no children input', async () => {
     const { fixture } = await renderForm({ a: 'x' }, (f) => [
       group({ a: control(f.a, { component: TrackedControl }) }, { component: StaticWrapper }),
     ]);
     expect(fixture.nativeElement.textContent).toContain('static');
   });
 
-  it.fails('renders a library-iterated array wrapper that declares no children input', async () => {
+  it('renders a library-iterated array wrapper that declares no children input', async () => {
     const { fixture } = await renderForm({ items: items('a') }, (f) => [
       array(f.items, { component: StaticWrapper }, (item) =>
         control(item.name, { component: TrackedControl }),
@@ -381,7 +380,14 @@ describe('wrapper bindings', () => {
     expect(fixture.nativeElement.textContent).toContain('static');
   });
 
-  it.fails('renders a renderer-owned array component that declares no field input', async () => {
+  it('renders a static array wrapper that declares no children input', async () => {
+    const { fixture } = await renderForm({ a: 'x' }, (f) => [
+      array([control(f.a, { component: TrackedControl })], { component: StaticWrapper }),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it('renders a renderer-owned array component that declares no field input', async () => {
     const { fixture } = await renderForm({ items: items('a') }, (f) => [
       array(f.items, { component: StaticWrapper }),
     ]);

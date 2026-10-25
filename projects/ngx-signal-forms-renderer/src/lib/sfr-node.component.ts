@@ -105,42 +105,45 @@ export class SfrNodeComponent {
    * Reactive input bindings for the resolved component: the renderer's reserved bindings by
    * node kind, followed by any consumer-provided `node.bindings` (additive — they must not
    * re-bind the reserved inputs):
-   * - control: `field` + `state`, each only if the component declares it (value etc. of a
-   *   FormValueControl/FormCheckboxControl come from the FormField directive, not bindings)
+   * - control: `field` + `state` (value etc. of a FormValueControl/FormCheckboxControl come
+   *   from the FormField directive, not bindings)
    * - group: `children` (the keyed record)
    * - array (static ordered nodes): `children` (the node's LayoutNode[])
    * - array (renderer-owned, no itemLayout): `field`
    * - array (library-iterated): `children` (the per-item LayoutNodes)
+   *
+   * Each reserved input is bound only if the component declares it, so any component can opt
+   * out of any of them without a "binding to unknown input" error.
    */
   protected readonly bindings = computed((): Binding[] => {
     const node = this.node();
     const io = this.componentIo();
-    const extra = node.bindings ?? [];
+    const reserved: Binding[] = [];
+    const bind = (name: string, value: () => unknown) => {
+      if (!io || io.inputs.has(name)) reserved.push(inputBinding(name, value));
+    };
 
-    if (node.kind === 'control') {
-      const { field } = node;
-      // Bind `field`/`state` only if the control actually declares them, so a control can opt
-      // out of either (or both) without a "binding to unknown input" error.
-      const reserved: Binding[] = [];
-      if (!io || io.inputs.has('field')) reserved.push(inputBinding('field', () => field));
-      if (!io || io.inputs.has('state')) reserved.push(inputBinding('state', () => field()));
-      return [...reserved, ...extra];
+    switch (node.kind) {
+      case 'control': {
+        const { field } = node;
+        bind('field', () => field);
+        bind('state', () => field());
+        break;
+      }
+      case 'group': {
+        const { children } = node;
+        bind('children', () => children);
+        break;
+      }
+      case 'array': {
+        const { field, itemLayout, children } = node;
+        if (field && itemLayout) bind('children', this.arrayItems);
+        else if (field) bind('field', () => field);
+        else bind('children', () => children ?? []);
+        break;
+      }
     }
-    if (node.kind === 'group') {
-      const { children } = node;
-      return [inputBinding('children', () => children), ...extra];
-    }
-    // array — library-iterated (field + itemLayout)
-    if (node.field && node.itemLayout) {
-      return [inputBinding('children', this.arrayItems), ...extra];
-    }
-    // array — renderer-owned field (no itemLayout)
-    if (node.field) {
-      const { field } = node;
-      return [inputBinding('field', () => field), ...extra];
-    }
-    // array — static ordered nodes
-    return [inputBinding('children', () => node.children ?? []), ...extra];
+    return [...reserved, ...(node.bindings ?? [])];
   });
 
   // Caches one computed per item field, keyed by the field's identity. Signal forms
