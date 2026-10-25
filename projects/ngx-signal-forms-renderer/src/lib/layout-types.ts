@@ -42,8 +42,8 @@ export interface ControlNode<TValue = unknown> extends LayoutNodeOptions {
  * template locations, or iterate all values.
  *
  * `field` is set when the group is data-driven (`group(f.address, ...)`), so its
- * visibility can defer to that field's native `hidden()`. Explicit-children groups
- * (`group({ ... })`) have no field.
+ * visibility can defer to that field's native `hidden()`, and a wrapper that declares
+ * `field`/`state` inputs receives them. Explicit-children groups (`group({ ... })`) have no field.
  */
 export interface GroupNode extends LayoutNodeOptions {
   readonly kind: 'group';

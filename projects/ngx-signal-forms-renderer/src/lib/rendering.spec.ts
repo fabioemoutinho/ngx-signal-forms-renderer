@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { inputBinding, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { FieldTree, hidden } from '@angular/forms/signals';
-import { array, control, group } from './layout';
+import { FieldTree, hidden, required } from '@angular/forms/signals';
+import { array, content, control, group } from './layout';
 import { provideSignalFormsRenderer } from './provider';
 import {
   CardWrapper,
   CheckboxControl,
   created,
   destroyed,
+  FieldWrapper,
   Item,
   items,
   ListWrapper,
@@ -18,6 +19,7 @@ import {
   resetTracking,
   spyWarn,
   StaticWrapper,
+  TextContent,
   TrackedControl,
 } from './testing/harness';
 
@@ -469,6 +471,69 @@ describe('wrapper bindings', () => {
     await expectStable(() => title.set('Two'));
 
     expect(all(CardWrapper)[0].title()).toBe('Two');
+  });
+  describe('field and state', () => {
+    it('passes them to a data-driven group wrapper, for section-level errors', async () => {
+      const { host, act, all, fixture } = await renderForm(
+        { address: { street: '' } },
+        (f) => [
+          group(f.address, { component: FieldWrapper }, (g) => ({
+            street: control(g.street, { component: TrackedControl }),
+          })),
+        ],
+        { schema: (p) => required(p.address.street) },
+      );
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.field()).toBe(host.f.address);
+      expect(wrapper.state()).toBe(host.f.address());
+      expect(fixture.nativeElement.textContent).toContain('errors:1');
+
+      await act(() => host.f.address.street().value.set('Main'));
+
+      expect(fixture.nativeElement.textContent).toContain('errors:0');
+      expect(all(FieldWrapper)).toEqual([wrapper]);
+    });
+
+    it('passes them to a library-iterated array wrapper, alongside children', async () => {
+      const { host, all } = await renderForm({ items: items('a', 'b') }, (f) => [
+        array(f.items, { component: FieldWrapper }, (item) => control(item.name, { component: TrackedControl })),
+      ]);
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.field()).toBe(host.f.items);
+      expect(wrapper.state()).toBe(host.f.items());
+      expect(wrapper.children()).toHaveLength(2);
+    });
+
+    it('lets an array wrapper tell the empty node apart from a single item', async () => {
+      const { all } = await renderForm({ items: [] as Item[] }, (f) => [
+        array(f.items, { component: FieldWrapper, empty: content(TextContent) }, (item) =>
+          control(item.name, { component: TrackedControl }),
+        ),
+      ]);
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.children()).toHaveLength(1);
+      expect(wrapper.state()!.value()).toEqual([]);
+    });
+
+    it('passes state to a renderer-owned array component', async () => {
+      const { host, all } = await renderForm({ items: items('a') }, (f) => [
+        array(f.items, { component: FieldWrapper }),
+      ]);
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.field()).toBe(host.f.items);
+      expect(wrapper.state()).toBe(host.f.items());
+    });
+
+    it('passes neither to wrappers without a field (explicit groups, static arrays)', async () => {
+      const { all } = await renderForm({ a: 'x' }, (f) => [
+        group({ a: control(f.a, { component: TrackedControl }) }, { component: FieldWrapper }),
+        array([control(f.a, { component: TrackedControl })], { component: FieldWrapper }),
+      ]);
+      expect(all(FieldWrapper).map((w) => [w.field(), w.state()])).toEqual([
+        [undefined, undefined],
+        [undefined, undefined],
+      ]);
+    });
   });
 });
 

@@ -427,6 +427,17 @@ export class StepperComponent {
 }
 ```
 
+Wrappers of a data-driven group or an array field also receive `field` (the `FieldTree`) and `state`
+(its `FieldState`) if they declare them — for section-level errors, pending state, or telling an array's
+`empty` node apart from a single item. Like every reserved input, they're bound only when declared.
+
+```typescript
+export class SectionCardComponent {
+  readonly children = input.required<Record<string, LayoutNode>>();
+  readonly state = input<FieldState<unknown>>();   // e.g. state()?.errorSummary()
+}
+```
+
 ## Layout composability
 
 Layouts are plain functions returning `LayoutNode[]`, so composition is just TypeScript.

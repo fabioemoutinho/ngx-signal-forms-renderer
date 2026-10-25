@@ -54,6 +54,11 @@ may contain breaking changes; they are always called out under **Breaking**.
   because it reads a signal. A re-run builds new nodes, so the components it renders are recreated
   (inputs lose focus and local state). That is fine for structure that changes rarely, such as
   loaded config; the warning makes the cost visible. Logged once per layout or item function.
+- Group and array wrappers now receive `field` and `state` when they declare them and the node has
+  a field: data-driven groups (`group(f.address, …)`), library-iterated arrays and renderer-owned
+  arrays (which already received `field`). Use them for section-level errors and pending state, or
+  to tell an array's `empty` node apart from a single item. Explicit groups and static arrays have
+  no field.
 
 ### Fixed
 

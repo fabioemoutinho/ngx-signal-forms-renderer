@@ -17,7 +17,13 @@ import {
 } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { FieldTree, form, FormCheckboxControl, SchemaOrSchemaFn } from '@angular/forms/signals';
+import {
+  FieldState,
+  FieldTree,
+  form,
+  FormCheckboxControl,
+  SchemaOrSchemaFn,
+} from '@angular/forms/signals';
 import { layout } from '../layout';
 import { LayoutNode } from '../layout-types';
 import { SfrChildrenComponent } from '../children.component';
@@ -91,6 +97,21 @@ export class ListWrapper extends Tracked {
 export class CardWrapper extends Tracked {
   readonly children = input.required<Record<string, LayoutNode>>();
   readonly title = input('');
+}
+
+/**
+ * Wrapper for any group or array that also declares `field`/`state`, to see what it receives.
+ * Renders its children, and the count of errors in the field and below as `errors:N`.
+ */
+@Component({
+  selector: 'test-field-wrapper',
+  imports: [SfrChildrenComponent],
+  template: `errors:{{ state()?.errorSummary()?.length ?? '-' }}<sfr-children [children]="children()" />`,
+})
+export class FieldWrapper extends Tracked {
+  readonly children = input<LayoutNode[] | Record<string, LayoutNode>>([]);
+  readonly field = input<FieldTree<unknown>>();
+  readonly state = input<FieldState<unknown>>();
 }
 
 /** Renderer-owned array component: receives the array field itself. */

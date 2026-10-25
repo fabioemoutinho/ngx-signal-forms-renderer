@@ -138,6 +138,7 @@ Both of Angular's custom-control contracts are supported: `FormValueControl<T>` 
 })
 export class MyGroupComponent {
   readonly children = input.required<Record<string, LayoutNode>>(); // provided by the library
+  readonly state = input<FieldState<unknown>>(); // optional — data-driven groups/array fields only
   readonly title = input(''); // from bindings
 }
 ```

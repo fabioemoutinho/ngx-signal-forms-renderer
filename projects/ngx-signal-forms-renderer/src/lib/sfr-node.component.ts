@@ -112,11 +112,11 @@ export class SfrNodeComponent {
    * re-bind the reserved inputs):
    * - control: `field` + `state` (value etc. of a FormValueControl/FormCheckboxControl come
    *   from the FormField directive, not bindings)
-   * - group: `children` (the keyed record)
+   * - group: `children` (the keyed record); data-driven groups also `field` + `state`
    * - array (static ordered nodes): `children` (the node's LayoutNode[])
-   * - array (renderer-owned, no itemLayout): `field`
+   * - array (renderer-owned, no itemLayout): `field` + `state`
    * - array (library-iterated): `children` (the per-item LayoutNodes, or `[empty]` while there
-   *   are no items)
+   *   are no items) + `field` + `state`
    * - content: none — only the consumer's bindings
    *
    * Each reserved input is bound only if the component declares it, so any component can opt
@@ -131,23 +131,27 @@ export class SfrNodeComponent {
       if (!io || io.inputs.has(name)) reserved.push(inputBinding(name, value));
     };
 
+    const bindField = <T,>(field: FieldTree<T> | undefined) => {
+      if (!field) return;
+      bind('field', () => field);
+      bind('state', () => field());
+    };
+
     switch (node.kind) {
-      case 'control': {
-        const { field } = node;
-        bind('field', () => field);
-        bind('state', () => field());
+      case 'control':
+        bindField(node.field);
         break;
-      }
       case 'group': {
         const { children } = node;
         bind('children', () => children);
+        bindField(node.field);
         break;
       }
       case 'array': {
         const { field, itemLayout, children } = node;
         if (field && itemLayout) bind('children', this.arrayItems);
-        else if (field) bind('field', () => field);
-        else bind('children', () => children ?? []);
+        else if (!field) bind('children', () => children ?? []);
+        bindField(field);
         break;
       }
     }
