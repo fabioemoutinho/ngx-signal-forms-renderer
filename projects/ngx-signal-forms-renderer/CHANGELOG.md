@@ -8,6 +8,12 @@ may contain breaking changes; they are always called out under **Breaking**.
 
 ## [Unreleased]
 
+### Breaking
+
+- The minimum supported Angular version is now **22.1.0** (peer dependencies `>=22.1.0`). Angular
+  22.2.2 or later is recommended: it fixes a value typed into a `debounce(…, 'blur')` field being
+  lost when its control is destroyed, which conditional layouts do.
+
 ## [0.0.1-beta.1] - 2026-10-24
 
 ### Breaking
