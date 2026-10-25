@@ -4,6 +4,7 @@ import {
   computed,
   DirectiveWithBindings,
   effect,
+  ElementRef,
   forwardRef,
   inject,
   input,
@@ -16,6 +17,7 @@ import { FieldTree, FormField } from '@angular/forms/signals';
 import { LayoutNode } from './layout-types';
 import { SIGNAL_FORMS_RENDERER_TYPE_REGISTRY } from './provider';
 import { SfrComponentOutletDirective } from './sfr-component-outlet.directive';
+import { LAYOUT_RERUN_ADVICE, warnOnce } from './dev-warnings';
 
 /**
  * Recursive layout node renderer. Receives a LayoutNode and renders the resolved
@@ -50,6 +52,7 @@ export class SfrNodeComponent {
   readonly node = input.required<LayoutNode>();
 
   private readonly registry = inject(SIGNAL_FORMS_RENDERER_TYPE_REGISTRY);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly isHidden = computed(() => {
     const node = this.node();
@@ -151,7 +154,8 @@ export class SfrNodeComponent {
   // remove, reorder — swap identities), so the same item always yields the same
   // LayoutNode reference. That lets `@for (track node)` reuse components when the user
   // types, instead of recreating them and losing focus. WeakMap, so dropped items are GC'd.
-  private readonly _itemComputeds = new WeakMap<object, Signal<LayoutNode>>();
+  // `last` remembers the item's previous node, to warn when its itemLayout re-runs.
+  private readonly _items = new WeakMap<object, { layout: Signal<LayoutNode>; last?: LayoutNode }>();
 
   private readonly arrayItems = computed((): LayoutNode[] => {
     const node = this.node();
@@ -159,12 +163,22 @@ export class SfrNodeComponent {
     const { field, itemLayout } = node;
     return Array.from(field, (itemField) => {
       const key = itemField as object;
-      let item = this._itemComputeds.get(key);
+      let item = this._items.get(key);
       if (!item) {
-        item = computed(() => itemLayout(itemField as FieldTree<any>));
-        this._itemComputeds.set(key, item);
+        item = { layout: computed(() => itemLayout(itemField as FieldTree<any>)) };
+        this._items.set(key, item);
       }
-      return item();
+      const itemNode = item.layout();
+      if (item.last && item.last !== itemNode) {
+        warnOnce(
+          itemLayout,
+          "An array's item layout function re-ran (it reads a signal), so that item's components " +
+            `were recreated (inputs lose focus and local state). ${LAYOUT_RERUN_ADVICE}\nArray:`,
+          this.host.nativeElement,
+        );
+      }
+      item.last = itemNode;
+      return itemNode;
     });
   });
 

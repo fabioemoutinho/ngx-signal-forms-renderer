@@ -16,6 +16,7 @@ import {
   OwnedList,
   renderForm,
   resetTracking,
+  spyWarn,
   StaticWrapper,
   TrackedControl,
 } from './testing/harness';
@@ -75,35 +76,6 @@ describe('component stability', () => {
     expect(build).toHaveBeenCalledTimes(1);
   });
 
-  // KNOWN ISSUE: layout() is one computed; any signal it reads rebuilds every node, so every
-  // component is recreated. Flip to `it` once nodes are reused across layout recomputes.
-  it.fails('does not recreate unrelated controls when a layout branch toggles', async () => {
-    const showExtra = signal(false);
-    const { act, all } = await renderForm({ name: 'Ada', extra: 'x' }, (f) => [
-      control(f.name, { component: TrackedControl }),
-      ...(showExtra() ? [control(f.extra, { component: TrackedControl })] : []),
-    ]);
-    const [name] = all(TrackedControl);
-
-    await act(() => showExtra.set(true));
-
-    expect(all(TrackedControl)[0]).toBe(name);
-  });
-
-  // KNOWN ISSUE (same cause): typing in a field the layout reads recreates that very input,
-  // so it loses focus on every keystroke.
-  it.fails('does not recreate a control whose own value drives a layout branch', async () => {
-    const { host, act, all } = await renderForm({ country: 'US', state: '' }, (f) => [
-      control(f.country, { component: TrackedControl }),
-      ...(f.country().value() === 'US' ? [control(f.state, { component: TrackedControl })] : []),
-    ]);
-    const [country] = all(TrackedControl);
-
-    await act(() => host.model.update((m) => ({ ...m, country: 'USA' })));
-
-    expect(all(TrackedControl)[0]).toBe(country);
-  });
-
   it('does not recreate anything when the same condition is expressed as a node-level hidden', async () => {
     const { host, act, all } = await renderForm({ country: 'US', state: '' }, (f) => [
       control(f.country, { component: TrackedControl }),
@@ -121,6 +93,127 @@ describe('component stability', () => {
     expect(all(TrackedControl)[0]).toBe(country);
     // Only the conditional control is recreated when it reappears.
     expect(created).toHaveLength(3);
+  });
+});
+
+// ── Layout re-run warning ─────────────────────────────────────────────────
+
+// A layout function that reads a signal re-runs when it changes and builds new nodes, so every
+// component it renders is recreated. That's by design (no node reuse); the renderer warns in dev.
+describe('layout re-run warning', () => {
+  const RERUN = 'The layout function re-ran';
+  const ITEM_RERUN = 'item layout function re-ran';
+
+  it('recreates every control and warns when a layout branch toggles', async () => {
+    const { count } = spyWarn();
+    const showExtra = signal(false);
+    const { act, all } = await renderForm({ name: 'Ada', extra: 'x' }, (f) => [
+      control(f.name, { component: TrackedControl }),
+      ...(showExtra() ? [control(f.extra, { component: TrackedControl })] : []),
+    ]);
+    const [name] = all(TrackedControl);
+
+    await act(() => showExtra.set(true));
+
+    expect(all(TrackedControl)[0]).not.toBe(name);
+    expect(count(RERUN)).toBe(1);
+  });
+
+  it('recreates the control whose own value drives a layout branch, and warns', async () => {
+    const { count } = spyWarn();
+    const { host, act, all } = await renderForm({ country: 'US', state: '' }, (f) => [
+      control(f.country, { component: TrackedControl }),
+      ...(f.country().value() === 'US' ? [control(f.state, { component: TrackedControl })] : []),
+    ]);
+    const [country] = all(TrackedControl);
+
+    await act(() => host.model.update((m) => ({ ...m, country: 'USA' })));
+
+    expect(all(TrackedControl)[0]).not.toBe(country);
+    expect(count(RERUN)).toBe(1);
+  });
+
+  it('does not warn on the first render', async () => {
+    const { count } = spyWarn();
+    await renderForm({ name: 'Ada' }, (f) => [control(f.name, { component: TrackedControl })]);
+    expect(count(RERUN)).toBe(0);
+  });
+
+  it('does not warn when a different layout is passed to <sfr-form>', async () => {
+    const { count } = spyWarn();
+    const { swapLayout } = await renderForm({ a: 'x', b: 'y' }, (f) => [
+      control(f.a, { component: TrackedControl }),
+    ]);
+
+    await swapLayout((f) => [control(f.b, { component: TrackedControl })]);
+
+    expect(count(RERUN)).toBe(0);
+  });
+
+  it('does not warn when values change without re-running the layout', async () => {
+    const { count } = spyWarn();
+    const { host, act } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl }),
+    ]);
+
+    await act(() => host.f.name().value.set('Grace'));
+
+    expect(count(RERUN)).toBe(0);
+  });
+
+  it('warns once per layout, not on every re-run', async () => {
+    const { count } = spyWarn();
+    const flag = signal(false);
+    const { act } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl, bindings: flag() ? [] : [] }),
+    ]);
+
+    for (let i = 0; i < 3; i++) await act(() => flag.update((v) => !v));
+
+    expect(count(RERUN)).toBe(1);
+  });
+
+  it('logs the form element and says the warning is shown once', async () => {
+    const { warn } = spyWarn();
+    const flag = signal(false);
+    const { fixture, act } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl, bindings: flag() ? [] : [] }),
+    ]);
+
+    await act(() => flag.set(true));
+
+    const [message, element] = warn.mock.calls[0];
+    expect(message).toContain('untracked(');
+    expect(message).toContain('Shown once per layout function');
+    expect(element).toBe(fixture.nativeElement.querySelector('sfr-form'));
+  });
+
+  it('warns when an item layout function re-runs, logging the array element', async () => {
+    const { warn, count } = spyWarn();
+    const compact = signal(false);
+    const { fixture, act } = await renderForm({ items: items('a', 'b') }, (f) => [
+      array(f.items, (item) =>
+        control(item.name, { component: TrackedControl, bindings: compact() ? [] : [] }),
+      ),
+    ]);
+
+    await act(() => compact.set(true));
+
+    expect(count(ITEM_RERUN)).toBe(1);
+    expect(count(RERUN)).toBe(0);
+    expect(warn.mock.calls[0][1]).toBe(fixture.nativeElement.querySelector('sfr-form sfr-node'));
+  });
+
+  it('does not warn when items are added, removed or reordered', async () => {
+    const { count } = spyWarn();
+    const { host, act } = await renderForm({ items: items('a', 'b') }, (f) => [
+      array(f.items, (item) => control(item.name, { component: TrackedControl })),
+    ]);
+
+    await act(() => host.model.update((m) => ({ items: [...m.items, { name: 'c' }] })));
+    await act(() => host.model.update((m) => ({ items: [m.items[2], m.items[0]] })));
+
+    expect(count(ITEM_RERUN)).toBe(0);
   });
 });
 

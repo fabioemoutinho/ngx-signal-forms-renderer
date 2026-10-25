@@ -14,6 +14,13 @@ may contain breaking changes; they are always called out under **Breaking**.
   22.2.2 or later is recommended: it fixes a value typed into a `debounce(…, 'blur')` field being
   lost when its control is destroyed, which conditional layouts do.
 
+### Added
+
+- A dev-mode warning when a `layout()` function, or an array's item layout function, re-runs
+  because it reads a signal. A re-run builds new nodes, so the components it renders are recreated
+  (inputs lose focus and local state). That is fine for structure that changes rarely, such as
+  loaded config; the warning makes the cost visible. Logged once per layout or item function.
+
 ### Fixed
 
 - Group and array wrapper components no longer need to declare a `children` (or, for

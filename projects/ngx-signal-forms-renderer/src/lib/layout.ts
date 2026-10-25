@@ -114,9 +114,13 @@ export function array<T>(
  * Creates a reactive layout for a form. `fn` receives the form's FieldTree<T> for
  * type-safe path access (e.g. `f.name`, `f.items`).
  *
- * Returns a `computed` Signal<LayoutNode[]>, re-evaluated by `<sfr-form>` when its
- * dependencies change. Reading signals inside `fn` makes the layout automatically
- * reactive — e.g. branch on a field's value to add or drop nodes.
+ * Returns a `computed` Signal<LayoutNode[]>. If `fn` reads a signal, it re-runs whenever that
+ * signal changes and builds new nodes, so every component it renders is recreated (inputs lose
+ * focus and local state); dev mode logs a warning the first time. That suits structure that
+ * changes rarely, such as fields decided by loaded config or permissions. For conditions that
+ * change while the user fills the form, `when()`/`switchCase()` or the schema's `hidden()`
+ * re-render only what changes, and values can be read inside binding closures
+ * (`inputBinding('label', () => …)`).
  *
  * @example
  * const myLayout = layout(userForm, (f) => [
