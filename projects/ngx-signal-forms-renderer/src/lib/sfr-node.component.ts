@@ -8,6 +8,7 @@ import {
   inject,
   input,
   inputBinding,
+  reflectComponentType,
   Signal,
   Type,
 } from '@angular/core';
@@ -22,10 +23,10 @@ import { SfrComponentOutletDirective } from './sfr-component-outlet.directive';
  * control nodes, the `FormField` host directive). When no component is resolved it
  * falls back to rendering the node's children, each through a nested `sfr-node`.
  *
- * For control nodes whose component implements `FormValueControl<T>`, the `FormField`
- * directive is attached so value, errors, touched, disabled, etc. are bound
- * automatically from the field. Other control components receive `field` and `state`
- * inputs instead.
+ * For control nodes whose component implements `FormValueControl<T>` or
+ * `FormCheckboxControl`, the `FormField` directive is attached so value, errors, touched,
+ * disabled, etc. are bound automatically from the field. Independently, any control that
+ * declares `field` and/or `state` inputs receives them.
  */
 @Component({
   selector: 'sfr-node',
@@ -65,17 +66,33 @@ export class SfrNodeComponent {
   );
 
   /**
+   * Public inputs of the resolved component and whether it is a form control `FormField` can
+   * bind to: a `FormValueControl<T>` (`value` input + `valueChange` output) or a
+   * `FormCheckboxControl` (`checked` input + `checkedChange` output) — the two-way model
+   * contracts. Read via `reflectComponentType` because there's no runtime marker for the
+   * interfaces. Null when no component is resolved.
+   */
+  private readonly componentIo = computed(() => {
+    const comp = this.resolvedComponent();
+    const mirror = comp && reflectComponentType(comp);
+    if (!mirror) return null;
+    const inputs = new Set(mirror.inputs.map((i) => i.templateName));
+    const outputs = new Set(mirror.outputs.map((o) => o.templateName));
+    const hasModel = (name: string) => inputs.has(name) && outputs.has(`${name}Change`);
+    return { inputs, isFormControl: hasModel('value') || hasModel('checked') };
+  });
+
+  /**
    * Host directives applied to the resolved component: the renderer's own (the `FormField`
-   * directive auto-attached to `FormValueControl` controls so value/errors/touched/disabled
-   * are wired from the field) followed by any consumer-provided `node.directives`. Undefined
-   * when there are none.
+   * directive auto-attached to `FormValueControl`/`FormCheckboxControl` controls so
+   * value/errors/touched/disabled are wired from the field) followed by any consumer-provided
+   * `node.directives`. Undefined when there are none.
    */
   protected readonly directives = computed(
     (): (Type<unknown> | DirectiveWithBindings<unknown>)[] | undefined => {
       const node = this.node();
-      const comp = this.resolvedComponent();
       const result: (Type<unknown> | DirectiveWithBindings<unknown>)[] = [];
-      if (comp && node.kind === 'control' && isFormValueControl(comp)) {
+      if (node.kind === 'control' && this.componentIo()?.isFormControl) {
         const field = node.field;
         result.push({ type: FormField, bindings: [inputBinding('formField', () => field)] });
       }
@@ -88,8 +105,8 @@ export class SfrNodeComponent {
    * Reactive input bindings for the resolved component: the renderer's reserved bindings by
    * node kind, followed by any consumer-provided `node.bindings` (additive — they must not
    * re-bind the reserved inputs):
-   * - control + FormValueControl: none reserved (value etc. come from the FormField directive)
-   * - control (plain): `field` + `state`
+   * - control: `field` + `state`, each only if the component declares it (value etc. of a
+   *   FormValueControl/FormCheckboxControl come from the FormField directive, not bindings)
    * - group: `children` (the keyed record)
    * - array (static ordered nodes): `children` (the node's LayoutNode[])
    * - array (renderer-owned, no itemLayout): `field`
@@ -97,17 +114,16 @@ export class SfrNodeComponent {
    */
   protected readonly bindings = computed((): Binding[] => {
     const node = this.node();
-    const comp = this.resolvedComponent();
+    const io = this.componentIo();
     const extra = node.bindings ?? [];
 
     if (node.kind === 'control') {
-      if (comp && isFormValueControl(comp)) return extra;
       const { field } = node;
       // Bind `field`/`state` only if the control actually declares them, so a control can opt
       // out of either (or both) without a "binding to unknown input" error.
       const reserved: Binding[] = [];
-      if (!comp || hasInput(comp, 'field')) reserved.push(inputBinding('field', () => field));
-      if (!comp || hasInput(comp, 'state')) reserved.push(inputBinding('state', () => field()));
+      if (!io || io.inputs.has('field')) reserved.push(inputBinding('field', () => field));
+      if (!io || io.inputs.has('state')) reserved.push(inputBinding('state', () => field()));
       return [...reserved, ...extra];
     }
     if (node.kind === 'group') {
@@ -170,18 +186,3 @@ export class SfrNodeComponent {
   });
 }
 
-/**
- * Detects whether a component implements `FormValueControl<T>` by inspecting its compiled
- * definition (`ɵcmp`) for a `value` input and a `valueChange` output — the two-way `value`
- * contract `FormField` binds to. Reads the internal def because there's no public runtime
- * marker for the interface.
- */
-function isFormValueControl(comp: Type<unknown>): boolean {
-  const cmpDef = (comp as any).ɵcmp;
-  return cmpDef?.inputs?.value !== undefined && cmpDef?.outputs?.valueChange !== undefined;
-}
-
-/** Whether a component declares a public input with the given name (reads its compiled def). */
-function hasInput(comp: Type<unknown>, name: string): boolean {
-  return (comp as any).ɵcmp?.inputs?.[name] !== undefined;
-}

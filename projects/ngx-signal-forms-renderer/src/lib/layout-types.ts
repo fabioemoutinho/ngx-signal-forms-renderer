@@ -18,7 +18,7 @@ export interface LayoutNodeOptions {
   bindings?: Binding[];
   /**
    * Host directives to attach to the resolved component. Merged after the renderer's own
-   * (the `FormField` directive auto-attached to `FormValueControl` controls).
+   * (the `FormField` directive auto-attached to `FormValueControl`/`FormCheckboxControl` controls).
    */
   directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[];
   /**
@@ -32,9 +32,10 @@ export interface LayoutNodeOptions {
 /**
  * A control node that renders a form control component.
  *
- * The component should implement `FormValueControl<T>` from `@angular/forms/signals`
- * (its value/errors/touched/disabled are then bound automatically via `[formField]`),
- * or otherwise receive the `field` and `state` inputs and wire `[formField]` itself.
+ * The component should implement `FormValueControl<T>` (or `FormCheckboxControl` for a
+ * boolean `checked` model) from `@angular/forms/signals` — its value/errors/touched/disabled
+ * are then bound automatically via `[formField]` — or otherwise receive the `field` input and
+ * wire `[formField]` itself. Either kind also receives `field`/`state` if it declares them.
  */
 export interface ControlNode<TValue = unknown> extends LayoutNodeOptions {
   readonly kind: 'control';

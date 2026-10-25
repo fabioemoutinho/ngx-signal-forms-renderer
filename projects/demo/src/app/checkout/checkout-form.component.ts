@@ -22,7 +22,7 @@ import { productOf } from './catalog';
       <button matButton (click)="reset()">Reset</button>
     </div>
 
-    <sfr-form [form]="checkout" [layout]="checkoutLayout" />
+    <sfr-form [layout]="checkoutLayout" />
 
     <div class="summary">
       <span class="total">Total: \${{ total() }}</span>

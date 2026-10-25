@@ -21,7 +21,7 @@ import { LayoutNode } from './layout-types';
   // that lays out the rendered children.
   styles: ':host { display: contents; }',
   template: `
-    @for (child of childList(); track $index) {
+    @for (child of childList(); track child) {
       <sfr-node [node]="child" />
     }
   `,

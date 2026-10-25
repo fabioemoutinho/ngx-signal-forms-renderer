@@ -1,14 +1,13 @@
 import { Component, input, Signal } from '@angular/core';
-import { FieldTree } from '@angular/forms/signals';
 import { SfrNodeComponent } from './sfr-node.component';
 import { LayoutNode } from './layout-types';
 
 /**
- * Top-level form renderer component.
- * Takes a signal form and a layout function, then renders the form.
+ * Top-level form renderer component. Renders a layout produced by `layout()`, which already
+ * holds the form's fields.
  *
  * @example
- * <sfr-form [form]="userForm" [layout]="userLayout" />
+ * <sfr-form [layout]="userLayout" />
  */
 @Component({
   selector: 'sfr-form',
@@ -19,10 +18,7 @@ import { LayoutNode } from './layout-types';
     }
   `,
 })
-export class SfrFormComponent<T> {
-  /** The signal form FieldTree. */
-  readonly form = input.required<FieldTree<T>>();
-
-  /** Layout function. Produced by the layout() builder. */
+export class SfrFormComponent {
+  /** The layout signal produced by the `layout()` builder. */
   readonly layout = input.required<Signal<LayoutNode[]>>();
 }

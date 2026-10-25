@@ -7,14 +7,14 @@ description: Use this skill when working with ngx-signal-forms-renderer — an A
 
 ## What it is
 
-ngx-signal-forms-renderer auto-renders Angular forms from configuration, powered by Angular Signal Forms (`@angular/forms/signals`). Three layers:
+ngx-signal-forms-renderer auto-renders Angular forms from configuration, powered by Angular Signal Forms (`@angular/forms/signals`). Two layers:
 
 1. **Signal Forms** — data model + validation (`form()`, `required()`, `hidden()`, etc.)
 2. **Layout** — visual structure + rendering instructions: controls, groups, arrays
 
 ## Layout Node Kinds
 
-- **`control`** — renders a form control. The component implements `FormValueControl<T>`. The renderer attaches `[formField]` automatically, binding value, errors, touched, disabled, etc.
+- **`control`** — renders a form control. Either the component implements `FormValueControl<T>` / `FormCheckboxControl` (the renderer attaches `FormField` automatically, binding value, errors, touched, disabled, etc.), or it receives the `field` input and wires `[formField]` itself (Pattern A below).
 - **`group`** — renders children inside an optional wrapper component
 - **`array`** — repeatable section for array fields
 
@@ -38,34 +38,36 @@ provideSignalFormsRenderer({
 ### Builder Functions
 
 ```typescript
+import { inputBinding } from '@angular/core';
 import { layout, control, group, array } from 'ngx-signal-forms-renderer';
 
 // control(fieldRef, options?) — renders a form control
-control(f.name, { type: 'text', props: { label: 'Name' } })
+control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
 control(f.bio, { component: RichTextEditor })
 
-// group(name, children) or group(name, options, children)
-group('personal', [control(f.name)])
-group('personal', { type: 'card', props: { title: 'Info' } }, [control(f.name)])
-group('section', { hidden: computed(() => someSignal()) }, [control(f.x)])
+// group(children, options?) — explicit keyed children
+group({ name: control(f.name) })
+group({ name: control(f.name) }, { type: 'card', bindings: [inputBinding('title', () => 'Info')] })
+group({ x: control(f.x) }, { hidden: computed(() => someSignal()) })
 
-// array(fieldRef, itemLayout) or array(fieldRef, options, itemLayout)
-array(f.addresses, (addr, i) => [control(addr.street), control(addr.city)])
+// group(fieldRef, fn) or group(fieldRef, options, fn) — data-driven from a sub-object field
+group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
 
-// layout(formRef, fn) — returns () => LayoutNode[]
-const myLayout = layout(myForm, f => [
-  group('basics', [control(f.name), control(f.email)]),
+// array(fieldRef, itemLayout) or array(fieldRef, options, itemLayout) — one node per item
+array(f.addresses, (addr) => group(addr, (a) => ({ street: control(a.street) })))
+array(f.items, { component: ItemList })            // renderer-owned: component receives the field
+array([control(f.step1), control(f.step2)])        // static ordered nodes
+
+// layout(formRef, fn) — returns Signal<LayoutNode[]>
+const myLayout = layout(myForm, (f) => [
+  group({ name: control(f.name), email: control(f.email) }),
 ]);
 ```
 
 ### Template Usage
 
 ```html
-<!-- With explicit layout -->
-<sfr-form [form]="myForm" [fieldDefs]="fieldDefs" [layout]="myLayout" />
-
-<!-- Auto-render from fieldDefs (no layout needed) -->
-<sfr-form [form]="myForm" [fieldDefs]="fieldDefs" />
+<sfr-form [layout]="myLayout" />
 ```
 
 ### Component Resolution
@@ -103,7 +105,7 @@ export class TextInputComponent {
 
 ```typescript
 export class RatingComponent implements FormValueControl<number> {
-  readonly field = input.required<FieldTree<number>>();
+  readonly field = input.required<FieldTree<number>>(); // optional — bound if declared
   readonly value = model(0);          // required — two-way bound
   readonly errors = input([]);         // optional — auto-bound
   readonly disabled = input(false);    // optional — auto-bound
@@ -111,54 +113,54 @@ export class RatingComponent implements FormValueControl<number> {
 }
 ```
 
+Both of Angular's custom-control contracts are supported: `FormValueControl<T>` (`value = model()`) and `FormCheckboxControl` (`checked = model<boolean>()`).
+
 ### Group Component Contract
 
 ```typescript
 @Component({
   template: `
     <my-wrapper>
-      <sfr-children [children]="children()" [fieldDefs]="fieldDefs()" />
+      <sfr-children [children]="children()" />
     </my-wrapper>
   `,
   imports: [SfrChildrenComponent],
 })
 export class MyGroupComponent {
-  readonly name = input.required<string>();
-  readonly children = input.required<Record<string, LayoutNode>>();
-  readonly fieldDefs = input<FieldDefs<unknown>>();
-  readonly title = input(''); // custom prop
+  readonly children = input.required<Record<string, LayoutNode>>(); // provided by the library
+  readonly title = input(''); // from bindings
 }
 ```
 
 ### Visibility
 
-- **Controls**: Use signal forms `hidden()` in the schema. The renderer reads `field().hidden()` automatically.
-- **Groups/Arrays**: Use `hidden?: Signal<boolean>` on the layout node.
+- **Nodes mapped to a field** (controls, data-driven groups/arrays): use signal forms `hidden()` in the schema. The renderer reads `field().hidden()` automatically.
+- **Any node**: `hidden?: Signal<boolean>` on the layout node takes precedence — use it for layout-only nodes or to override. Prefer it over branching inside `layout()`: re-running `layout()` recreates every component.
 
 ### Layout Composability
 
 Layouts are plain functions — composability is free:
 
 ```typescript
-function addressFields(addr: FieldTree<Address>): LayoutNode[] {
-  return [
-    control(addr.street, { type: 'text', props: { label: 'Street' } }),
-    control(addr.city, { type: 'text', props: { label: 'City' } }),
-  ];
+function addressFields(addr: FieldTree<Address>): Record<string, LayoutNode> {
+  return {
+    street: control(addr.street, { type: 'text', bindings: [inputBinding('label', () => 'Street')] }),
+    city: control(addr.city, { type: 'text', bindings: [inputBinding('label', () => 'City')] }),
+  };
 }
 
-layout(orderForm, f => [
-  group('shipping', { type: 'card' }, [...addressFields(f.shippingAddress)]),
-  group('billing', { type: 'card' }, [...addressFields(f.billingAddress)]),
+layout(orderForm, (f) => [
+  group(f.shippingAddress, { type: 'card' }, addressFields),
+  group(f.billingAddress, { type: 'card' }, addressFields),
 ]);
 ```
 
 ## Important Notes
 
-- `FieldTree<T>` (not `Field<T>`) is the correct type from `@angular/forms/signals` in Angular 21+
+- `FieldTree<T>` (not `Field<T>`) is the correct type from `@angular/forms/signals`
 - Wrapper controls (Pattern A) use `[formField]` on their inner form element — the library passes `field` and `state` as inputs
-- Custom controls (Pattern B) implement `FormValueControl<T>` — only `value = model()` is required
+- Custom controls (Pattern B) implement `FormValueControl<T>` — only `value = model()` is required; they also receive `field`/`state` if they declare them
 - For Pattern B, `value` must be a `model()` (ModelSignal), not `input()` — it's two-way bound
 - Use `protected readonly` for template-bound members, `private readonly` for internal state
 - The library is UI-agnostic — bring your own components (Material, PrimeNG, custom, etc.)
-- Requires Angular 21+ with experimental signal forms
+- Requires Angular 22+ (signal forms)

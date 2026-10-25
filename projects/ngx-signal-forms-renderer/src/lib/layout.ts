@@ -9,7 +9,7 @@ import { ArrayNode, ControlNode, GroupNode, LayoutNode, LayoutNodeOptions } from
  *
  * @example
  * control(f.name)
- * control(f.name, { type: 'text', props: { label: 'Name' } })
+ * control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
  * control(f.name, { component: CustomInput })
  */
 export function control<T>(field: FieldTree<T>, options?: LayoutNodeOptions): ControlNode<T> {
@@ -33,7 +33,7 @@ export type ContainerOptions = LayoutNodeOptions;
  * @example
  * // Explicit children
  * group({ name: control(f.name), email: control(f.email) })
- * group({ name: control(f.name) }, { component: CardComponent, props: { title: 'Info' } })
+ * group({ name: control(f.name) }, { component: CardComponent, bindings: [inputBinding('title', () => 'Info')] })
  *
  * // Data-driven sub-object field
  * group(f.address, (g) => ({ street: control(g.street, { type: 'text' }) }))
@@ -82,7 +82,7 @@ export function group<T>(
  * array(f.items, (item) => group(item, (g) => ({ name: control(g.name, { type: 'text' }) })))
  *
  * // Library iterates — per-item fn + wrapper component that receives children
- * array(f.items, { component: SortableList, props: { onMove } }, (item) => group(item, ...))
+ * array(f.items, { component: SortableList, bindings: [outputBinding('moved', onMove)] }, (item) => group(item, ...))
  */
 export function array(children: LayoutNode[], options?: ContainerOptions): ArrayNode;
 export function array<T>(field: FieldTree<T[]>, options?: ContainerOptions): ArrayNode;

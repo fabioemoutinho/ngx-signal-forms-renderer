@@ -92,7 +92,7 @@ const userLayout = layout(userForm, (f) => [
 ### 4. Render it
 
 ```html
-<sfr-form [form]="userForm" [layout]="userLayout" />
+<sfr-form [layout]="userLayout" />
 ```
 
 ## Core Concepts
@@ -116,8 +116,9 @@ component you write gets the real `FieldTree`, so it keeps full access to signal
 
 ### Layout node kinds
 
-- **`control`** — a form control. Its component receives the `field` (and optionally `state`), or
-  implements `FormValueControl<T>`.
+- **`control`** — a form control. Its component implements `FormValueControl<T>` /
+  `FormCheckboxControl`, or receives the `field` and wires `[formField]` itself. Either way it gets
+  `field` (and `state`) if it declares them.
 - **`group`** — a keyed collection of nodes (`Record<string, LayoutNode>`), optionally wrapped in a
   component. Can be data-driven from a sub-object field.
 - **`array`** — a list of nodes: static, renderer-owned, or library-iterated from an array field.
@@ -155,7 +156,7 @@ control(f.email, {
 ```
 
 Consumer `bindings`/`directives` are merged *after* the renderer's own (the `field`/`state` inputs,
-or the `FormField` directive for `FormValueControl` components) — don't re-bind those.
+or the `FormField` directive for `FormValueControl`/`FormCheckboxControl` components) — don't re-bind those.
 
 ### Visibility
 
@@ -277,13 +278,12 @@ provideSignalFormsRenderer({
 
 #### `<sfr-form>`
 
-| Input    | Type                    | Description                                |
-| -------- | ----------------------- | ------------------------------------------ |
-| `form`   | `FieldTree<T>`          | Required. The signal form.                 |
-| `layout` | `Signal<LayoutNode[]>`  | Required. The signal from `layout()`.      |
+| Input    | Type                   | Description                                               |
+| -------- | ---------------------- | --------------------------------------------------------- |
+| `layout` | `Signal<LayoutNode[]>` | Required. The signal from `layout()` (it holds the form). |
 
 ```html
-<sfr-form [form]="userForm" [layout]="userLayout" />
+<sfr-form [layout]="userLayout" />
 ```
 
 #### `<sfr-children>`
@@ -311,8 +311,8 @@ export class CardGroupComponent {
 
 ### Control components
 
-The renderer binds `field` (the `FieldTree`) and `state` (the `FieldState`) **only if the component
-declares those inputs** — so a control opts into exactly what it needs.
+The renderer binds `field` (the `FieldTree`) and `state` (the `FieldState`) to **any** control
+component **that declares those inputs** — so a control opts into exactly what it needs.
 
 **Pattern A — wrap an existing UI control (Material, PrimeNG, …)** via `[formField]`:
 
@@ -337,7 +337,7 @@ export class TextInputComponent {
 A control that only binds via `[formField]` and shows no errors can declare just `field`.
 
 **Pattern B — fully custom control** implementing `FormValueControl<T>`. The renderer attaches the
-`FormField` directive (binding `value`/`touched`/etc.), so it receives **no** `field`/`state`:
+`FormField` directive, which binds `value`/`touched`/etc. — no `field` needed:
 
 ```typescript
 export class RatingComponent implements FormValueControl<number> {
@@ -345,6 +345,20 @@ export class RatingComponent implements FormValueControl<number> {
   readonly label = input('');  // from bindings
 }
 ```
+
+It can still declare `field` and/or `state` to reach what `FormField` doesn't bind — custom
+metadata, sibling fields, etc.:
+
+```typescript
+export class QuantityComponent implements FormValueControl<number> {
+  readonly value = model(0);
+  readonly state = input.required<FieldState<number>>(); // optional — bound if declared
+  protected readonly stock = computed(() => this.state().metadata(STOCK)?.() ?? 0);
+}
+```
+
+Both of Angular's custom-control contracts are supported: `FormValueControl<T>` (`value = model()`)
+and `FormCheckboxControl` (`checked = model<boolean>()`).
 
 ### Group / array components
 
