@@ -1,132 +1,26 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import {
-  Component,
-  computed,
-  Directive,
-  input,
-  inputBinding,
-  model,
-  OnDestroy,
-  signal,
-  Type,
-  WritableSignal,
-} from '@angular/core';
+import { computed, inputBinding, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
+import { FieldTree, hidden } from '@angular/forms/signals';
+import { array, control, group } from './layout';
+import { provideSignalFormsRenderer } from './provider';
 import {
-  FieldTree,
-  form,
-  FormCheckboxControl,
-  hidden,
-  SchemaOrSchemaFn,
-} from '@angular/forms/signals';
-import { array, control, group, layout } from './layout';
-import { LayoutNode } from './layout-types';
-import { SfrChildrenComponent } from './children.component';
-import { SfrFormComponent } from './sfr-form.component';
+  CardWrapper,
+  CheckboxControl,
+  created,
+  destroyed,
+  Item,
+  items,
+  ListWrapper,
+  MarkerDirective,
+  OwnedList,
+  renderForm,
+  resetTracking,
+  StaticWrapper,
+  TrackedControl,
+} from './testing/harness';
 
-// ── Instrumented test components ──────────────────────────────────────────
-
-/** Every live/destroyed instance of the tracked components, reset before each test. */
-const created: object[] = [];
-const destroyed: object[] = [];
-
-/** Plain control that records its own creation and destruction. */
-@Component({ selector: 'test-tracked', template: '{{ field()().value() }}' })
-class TrackedControl implements OnDestroy {
-  readonly field = input.required<FieldTree<string>>();
-  readonly label = input('');
-  constructor() {
-    created.push(this);
-  }
-  ngOnDestroy(): void {
-    destroyed.push(this);
-  }
-}
-
-/** Array wrapper that renders its items through the public `<sfr-children>` helper. */
-@Component({
-  selector: 'test-list-wrapper',
-  imports: [SfrChildrenComponent],
-  template: `<sfr-children [children]="children()" />`,
-})
-class ListWrapper {
-  readonly children = input.required<LayoutNode[]>();
-}
-
-/** Group wrapper that places children by key. */
-@Component({
-  selector: 'test-card',
-  imports: [SfrChildrenComponent],
-  template: `<section><sfr-children [children]="children()" /></section>`,
-})
-class CardWrapper {
-  readonly children = input.required<Record<string, LayoutNode>>();
-}
-
-/** Renderer-owned array component: receives the array field itself. */
-@Component({ selector: 'test-owned-list', template: '{{ field()().value().length }}' })
-class OwnedList {
-  readonly field = input.required<FieldTree<{ name: string }[]>>();
-}
-
-/** Checkbox-style custom control (`checked` model instead of `value`). */
-@Component({ selector: 'test-checkbox', template: '{{ checked() }}' })
-class CheckboxControl implements FormCheckboxControl {
-  readonly checked = model(false);
-}
-
-/** Consumer host directive, to verify it is attached alongside the renderer's own. */
-@Directive({ selector: '[testMarker]', host: { 'data-marker': 'yes' } })
-class MarkerDirective {}
-
-// ── Harness ────────────────────────────────────────────────────────────────
-
-async function renderForm<T>(
-  initial: T,
-  build: (f: FieldTree<T>) => LayoutNode[],
-  schema?: SchemaOrSchemaFn<T>,
-) {
-  @Component({
-    imports: [SfrFormComponent],
-    template: `<sfr-form [layout]="l" />`,
-  })
-  class Host {
-    readonly model: WritableSignal<T> = signal(initial);
-    readonly f: FieldTree<T> = schema ? form(this.model, schema) : form(this.model);
-    readonly l = layout(this.f, build);
-  }
-
-  const fixture = TestBed.createComponent(Host);
-  await fixture.whenStable();
-  const host = fixture.componentInstance;
-  /**
-   * Applies a change, then waits for Angular's (zoneless) scheduler to settle — no forced
-   * detectChanges, so a change only renders if it actually schedules a tick, and assertions run
-   * after every follow-up tick, not just the first.
-   */
-  const act = async (fn: () => void) => {
-    fn();
-    await fixture.whenStable();
-  };
-  /** Rendered instances of a component, in DOM order. */
-  const all = <C>(type: Type<C>): C[] =>
-    fixture.debugElement.queryAll(By.directive(type)).map((d) => d.componentInstance);
-  /** Text of each rendered leaf control, space-joined in DOM order (e.g. 'a b c'). */
-  const text = () =>
-    Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('test-tracked, test-checkbox'))
-      .map((el) => el.textContent?.trim())
-      .join(' ');
-  return { fixture, host, act, all, text };
-}
-
-type Item = { name: string };
-const items = (...names: string[]): Item[] => names.map((name) => ({ name }));
-
-beforeEach(() => {
-  created.length = 0;
-  destroyed.length = 0;
-});
+beforeEach(() => resetTracking());
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -251,12 +145,7 @@ describe.each([
   },
 ])('library-iterated array — $mode', ({ build }) => {
 
-  async function setup() {
-    const r = await renderForm({ items: items('a', 'b', 'c') }, build);
-    /** Rendered rows as creation-order ids (0 = first instance ever created), in DOM order. */
-    const ids = () => r.all(TrackedControl).map((row) => created.indexOf(row));
-    return { ...r, ids };
-  }
+  const setup = () => renderForm({ items: items('a', 'b', 'c') }, build);
 
   it('renders one row per item', async () => {
     const { text, ids } = await setup();
@@ -349,7 +238,7 @@ describe('visibility', () => {
     const { host, act, all } = await renderForm(
       { name: 'Ada', hide: false },
       (f) => [control(f.name, { component: TrackedControl })],
-      (p) => hidden(p.name, { when: ({ valueOf }) => valueOf(p.hide) }),
+      { schema: (p) => hidden(p.name, { when: ({ valueOf }) => valueOf(p.hide) }) },
     );
     expect(all(TrackedControl)).toHaveLength(1);
 
@@ -361,7 +250,7 @@ describe('visibility', () => {
     const { all } = await renderForm(
       { name: 'Ada' },
       (f) => [control(f.name, { component: TrackedControl, hidden: signal(false) })],
-      (p) => hidden(p.name, { when: () => true }),
+      { schema: (p) => hidden(p.name, { when: () => true }) },
     );
     expect(all(TrackedControl)).toHaveLength(1);
   });
@@ -370,7 +259,7 @@ describe('visibility', () => {
     const { all } = await renderForm(
       { address: { street: 'Main' } },
       (f) => [group(f.address, (g) => ({ street: control(g.street, { component: TrackedControl }) }))],
-      (p) => hidden(p.address, { when: () => true }),
+      { schema: (p) => hidden(p.address, { when: () => true }) },
     );
     expect(all(TrackedControl)).toHaveLength(0);
   });
@@ -467,5 +356,268 @@ describe('node kinds', () => {
       expect.stringContaining('No component resolved'),
       expect.any(String),
     );
+  });
+});
+
+// ── Wrapper bindings ──────────────────────────────────────────────────────
+
+describe('wrapper bindings', () => {
+  // KNOWN ISSUE: wrappers are always bound `children` (or `field` for renderer-owned arrays),
+  // even when they don't declare that input, which throws "unknown input" in dev mode.
+  // Flip to `it` once wrapper bindings respect declared inputs, like controls do.
+  it.fails('renders a group wrapper that declares no children input', async () => {
+    const { fixture } = await renderForm({ a: 'x' }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, { component: StaticWrapper }),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it.fails('renders a library-iterated array wrapper that declares no children input', async () => {
+    const { fixture } = await renderForm({ items: items('a') }, (f) => [
+      array(f.items, { component: StaticWrapper }, (item) =>
+        control(item.name, { component: TrackedControl }),
+      ),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it.fails('renders a renderer-owned array component that declares no field input', async () => {
+    const { fixture } = await renderForm({ items: items('a') }, (f) => [
+      array(f.items, { component: StaticWrapper }),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it('attaches consumer host directives to a group wrapper', async () => {
+    const { fixture } = await renderForm({ a: 'x' }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, {
+        component: CardWrapper,
+        directives: [MarkerDirective],
+      }),
+    ]);
+    expect(fixture.nativeElement.querySelector('test-card').getAttribute('data-marker')).toBe('yes');
+  });
+
+  it('updates a reactive binding on a group wrapper in place, without recreating', async () => {
+    const title = signal('One');
+    const { all, expectStable } = await renderForm({ a: 'x' }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, {
+        component: CardWrapper,
+        bindings: [inputBinding('title', title)],
+      }),
+    ]);
+
+    await expectStable(() => title.set('Two'));
+
+    expect(all(CardWrapper)[0].title()).toBe('Two');
+  });
+});
+
+// ── Registry resolution ───────────────────────────────────────────────────
+
+describe('registry resolution', () => {
+  const providers = [
+    provideSignalFormsRenderer({ types: { text: TrackedControl, card: CardWrapper, list: ListWrapper } }),
+  ];
+
+  it('resolves a group wrapper by type', async () => {
+    const { all, text } = await renderForm(
+      { a: 'x' },
+      (f) => [group({ a: control(f.a, { type: 'text' }) }, { type: 'card' })],
+      { providers },
+    );
+    expect(all(CardWrapper)).toHaveLength(1);
+    expect(text()).toBe('x');
+  });
+
+  it('resolves a library-iterated array wrapper by type', async () => {
+    const { all, text } = await renderForm(
+      { items: items('a', 'b') },
+      (f) => [array(f.items, { type: 'list' }, (item) => control(item.name, { type: 'text' }))],
+      { providers },
+    );
+    expect(all(ListWrapper)).toHaveLength(1);
+    expect(text()).toBe('a b');
+  });
+
+  it('falls back to rendering the children when a group type is not registered', async () => {
+    const { text } = await renderForm(
+      { a: 'x' },
+      (f) => [group({ a: control(f.a, { type: 'text' }) }, { type: 'unknown' })],
+      { providers },
+    );
+    expect(text()).toBe('x');
+  });
+
+  it.todo('warns in dev mode when a group or array type is not registered');
+});
+
+// ── Layout swap & lifecycle ───────────────────────────────────────────────
+
+describe('layout swap and lifecycle', () => {
+  it('renders a new layout passed to <sfr-form> and destroys the old components', async () => {
+    const { swapLayout, all, text } = await renderForm({ a: 'x', b: 'y' }, (f) => [
+      control(f.a, { component: TrackedControl }),
+    ]);
+    const [old] = all(TrackedControl);
+
+    await swapLayout((f) => [control(f.b, { component: TrackedControl })]);
+
+    expect(text()).toBe('y');
+    expect(destroyed).toEqual([old]);
+  });
+
+  it('destroys every rendered component when <sfr-form> is destroyed', async () => {
+    const { fixture } = await renderForm({ a: 'x', items: items('a', 'b') }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, { component: CardWrapper }),
+      array(f.items, { component: ListWrapper }, (item) =>
+        control(item.name, { component: TrackedControl }),
+      ),
+    ]);
+
+    fixture.destroy();
+
+    expect(created).toHaveLength(5);
+    expect(new Set(destroyed)).toEqual(new Set(created));
+  });
+
+  it('renders two <sfr-form>s over the same form in sync, without recreating either', async () => {
+    const { host, text, expectStable } = await renderForm(
+      { name: 'Ada' },
+      (f) => [control(f.name, { component: TrackedControl })],
+      { twice: true },
+    );
+    expect(text()).toBe('Ada Ada');
+
+    await expectStable(() => host.f.name().value.set('Grace'));
+
+    expect(text()).toBe('Grace Grace');
+  });
+
+  it('renders no box of its own (display: contents)', async () => {
+    const { fixture } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl }),
+    ]);
+    const node: HTMLElement = fixture.nativeElement.querySelector('sfr-node');
+    expect(getComputedStyle(node).display).toBe('contents');
+  });
+});
+
+// ── Nesting ───────────────────────────────────────────────────────────────
+
+describe('nesting', () => {
+  type Section = { title: string; items: Item[] };
+  const sections = (...s: Section[]) => ({ sections: s });
+
+  const nested = (f: FieldTree<{ sections: Section[] }>) => [
+    array(f.sections, (section) =>
+      group(section, (s) => ({
+        items: array(s.items, (item) => control(item.name, { component: TrackedControl })),
+      })),
+    ),
+  ];
+
+  it('does not recreate inner rows when an inner item is edited', async () => {
+    const { host, text, expectStable } = await renderForm(
+      sections({ title: 'S1', items: items('a', 'b') }, { title: 'S2', items: items('c') }),
+      nested,
+    );
+
+    await expectStable(() => host.f.sections[1].items[0].name().value.set('C'));
+
+    expect(text()).toBe('a b C');
+  });
+
+  it('moves inner rows with their outer item when outer items are reordered', async () => {
+    const { host, act, ids, text } = await renderForm(
+      sections({ title: 'S1', items: items('a', 'b') }, { title: 'S2', items: items('c') }),
+      nested,
+    );
+
+    await act(() => host.model.update((m) => ({ sections: [m.sections[1], m.sections[0]] })));
+
+    expect(text()).toBe('c a b');
+    expect(ids()).toEqual([2, 0, 1]);
+    expect(destroyed).toHaveLength(0);
+  });
+
+  it('does not recreate other rows when an inner item is removed', async () => {
+    const { host, act, ids } = await renderForm(
+      sections({ title: 'S1', items: items('a', 'b') }, { title: 'S2', items: items('c') }),
+      nested,
+    );
+
+    await act(() =>
+      host.model.update((m) => ({
+        sections: [{ ...m.sections[0], items: m.sections[0].items.slice(1) }, m.sections[1]],
+      })),
+    );
+
+    expect(ids()).toEqual([1, 2]);
+    expect(destroyed).toHaveLength(1);
+  });
+
+  it('does not recreate an array inside a data-driven group when a sibling field changes', async () => {
+    const { host, expectStable } = await renderForm(
+      { order: { note: 'n', items: items('a', 'b') } },
+      (f) => [
+        group(f.order, (o) => ({
+          note: control(o.note, { component: TrackedControl }),
+          items: array(o.items, (item) => control(item.name, { component: TrackedControl })),
+        })),
+      ],
+    );
+
+    await expectStable(() => host.f.order.note().value.set('changed'));
+  });
+});
+
+// ── More array shapes ─────────────────────────────────────────────────────
+
+describe('array shapes', () => {
+  it("hides a library-iterated array when its field's hidden() is true", async () => {
+    const { host, act, all } = await renderForm(
+      { hide: false, items: items('a', 'b') },
+      (f) => [array(f.items, (item) => control(item.name, { component: TrackedControl }))],
+      { schema: (p) => hidden(p.items, { when: ({ valueOf }) => valueOf(p.hide) }) },
+    );
+    expect(all(TrackedControl)).toHaveLength(2);
+
+    await act(() => host.model.update((m) => ({ ...m, hide: true })));
+    expect(all(TrackedControl)).toHaveLength(0);
+  });
+
+  it("hides a renderer-owned array when its field's hidden() is true", async () => {
+    const { all } = await renderForm(
+      { items: items('a') },
+      (f) => [array(f.items, { component: OwnedList })],
+      { schema: (p) => hidden(p.items, { when: () => true }) },
+    );
+    expect(all(OwnedList)).toHaveLength(0);
+  });
+
+  it('syncs a checkbox control inside an array item', async () => {
+    const { host, act, all } = await renderForm(
+      { todos: [{ done: true }, { done: false }] },
+      (f) => [array(f.todos, (todo) => control(todo.done, { component: CheckboxControl }))],
+    );
+
+    await act(() => all(CheckboxControl)[1].checked.set(true));
+
+    expect(host.model().todos.map((t) => t.done)).toEqual([true, true]);
+  });
+
+  // Signal forms tracks array item identity only for object items; primitive items are keyed by
+  // index. Removing the first item therefore keeps the first rows and shifts the values up.
+  it('tracks primitive items by index', async () => {
+    const { host, act, ids, text } = await renderForm({ tags: ['a', 'b', 'c'] }, (f) => [
+      array(f.tags, (tag) => control(tag, { component: TrackedControl })),
+    ]);
+
+    await act(() => host.model.update((m) => ({ tags: m.tags.slice(1) })));
+
+    expect(text()).toBe('b c');
+    expect(ids()).toEqual([0, 1]);
+    expect(destroyed).toHaveLength(1);
   });
 });
