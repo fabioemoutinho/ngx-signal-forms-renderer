@@ -27,9 +27,10 @@ npx ng serve
 npx ng test ngx-signal-forms-renderer
 ```
 
-## Releasing
+## Changelog & releasing
 
-See [RELEASING.md](./RELEASING.md).
+Changes are tracked in the library's [CHANGELOG](./projects/ngx-signal-forms-renderer/CHANGELOG.md).
+See [RELEASING.md](./RELEASING.md) for how releases are cut.
 
 ## License
 

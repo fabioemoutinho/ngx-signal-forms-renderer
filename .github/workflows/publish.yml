@@ -80,9 +80,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version="${{ steps.pkg.outputs.version }}"
           flags=()
           [ "${{ steps.tag.outputs.prerelease }}" = "true" ] && flags+=(--prerelease)
-          gh release create "v${{ steps.pkg.outputs.version }}" \
+          # Release notes = this version's CHANGELOG section (up to the next version heading or
+          # the link references); fall back to GitHub's generated notes if there is none.
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+            found { print }
+          ' projects/ngx-signal-forms-renderer/CHANGELOG.md > release-notes.md
+          if grep -q '[^[:space:]]' release-notes.md; then
+            flags+=(--notes-file release-notes.md)
+          else
+            flags+=(--generate-notes)
+          fi
+          gh release create "v$version" \
             --target "${{ github.sha }}" \
-            --title "v${{ steps.pkg.outputs.version }}" \
-            --generate-notes "${flags[@]}"
+            --title "v$version" \
+            "${flags[@]}"

@@ -16,22 +16,37 @@ Publishing uses npm **Trusted Publishing (OIDC)** — no tokens are stored in CI
 2. Nothing else — the workflow already has `id-token: write` and upgrades npm to ≥ 11.5.1, so no
    `NODE_AUTH_TOKEN`/secret is needed.
 
-> The package was first published manually to bootstrap it; the Trusted Publisher above now drives
-> every subsequent release through CI with no token.
+> `0.0.1-beta.0` was published by this workflow using an `NPM_TOKEN` secret. The workflow was then
+> switched to Trusted Publishing and the secret removed, so `0.0.1-beta.1` is the first release
+> through OIDC. If it fails with an auth error, check the Trusted Publisher settings above — nothing
+> is published on failure, and re-running is safe.
+
+## Changelog
+
+Every user-facing change goes into
+[`projects/ngx-signal-forms-renderer/CHANGELOG.md`](./projects/ngx-signal-forms-renderer/CHANGELOG.md)
+([Keep a Changelog](https://keepachangelog.com) format) under `## [Unreleased]`, in the same change
+that introduces it. Group entries under **Breaking**, **Added**, **Changed**, **Fixed**, **Removed**
+or **Known issues**, and include a migration snippet for anything breaking. The changelog ships in
+the npm package, and each GitHub Release's notes are taken from it.
 
 ## Cutting a release
 
-1. Bump the version (this is what triggers a release):
+1. In the changelog, rename `## [Unreleased]` to `## [<version>] - <YYYY-MM-DD>`, add a fresh empty
+   `## [Unreleased]` above it, and update the compare links at the bottom.
+2. Bump the version (this is what triggers a release). Use `--no-git-tag-version`, because CI
+   creates the tag:
    ```bash
    cd projects/ngx-signal-forms-renderer
-   npm version patch   # or: minor | major
+   npm version patch --no-git-tag-version   # or: minor | major
    ```
-2. Commit and merge that change to `main`.
-3. CI (`.github/workflows/publish.yml`) then:
+3. Commit both and merge to `main`.
+4. CI (`.github/workflows/publish.yml`) then:
    - **skips** if that version is already on npm (so re-runs are safe),
    - builds the library (`ng build ngx-signal-forms-renderer`),
    - publishes with a dist-tag derived from the version (see below),
-   - creates the `v<version>` git tag and a **GitHub Release** with auto-generated notes.
+   - creates the `v<version>` git tag and a **GitHub Release** whose notes are that version's
+     changelog section (or GitHub's auto-generated notes if the section is missing).
 
 You can also run it manually: Actions → "Publish to npm" → **Run workflow**.
 
@@ -47,9 +62,9 @@ The npm **dist-tag** is derived from the version string:
 
 ```bash
 cd projects/ngx-signal-forms-renderer
-npm version prerelease --preid beta   # 0.0.1-beta.0 -> 0.0.1-beta.1 -> ...
+npm version prerelease --preid beta --no-git-tag-version   # 0.0.1-beta.0 -> 0.0.1-beta.1 -> ...
 # when ready to promote to a stable release on `latest`:
-npm version 0.0.1                     # (or: npm version patch/minor/major)
+npm version 0.0.1 --no-git-tag-version                     # (or: patch/minor/major)
 ```
 
 ## Notes
