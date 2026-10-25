@@ -90,11 +90,9 @@ describe('group()', () => {
     expect(node.component).toBeUndefined();
   });
 
-  it('should support hidden signal', () => {
-    const hiddenSig = signal(true);
-    const node = group({}, { hidden: hiddenSig });
-    expect(node.hidden).toBe(hiddenSig);
-    expect(node.hidden!()).toBe(true);
+  it('no longer accepts a node-level hidden signal (use when() or the schema)', () => {
+    // @ts-expect-error — removed; use when(condition, () => node) or the schema's hidden()
+    group({}, { hidden: signal(true) });
   });
 
   it('should create a GroupNode from data-driven FieldTree + callback', () => {
@@ -161,12 +159,6 @@ describe('array()', () => {
     expect(node.field).toBe(f);
     expect(node.itemLayout).toBe(itemFn);
     expect(node.children).toBeUndefined();
-  });
-
-  it('should support hidden signal on static array', () => {
-    const hiddenSig = signal(false);
-    const node = array([], { hidden: hiddenSig });
-    expect(node.hidden).toBe(hiddenSig);
   });
 });
 

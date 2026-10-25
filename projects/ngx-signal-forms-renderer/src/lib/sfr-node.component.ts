@@ -56,18 +56,16 @@ export class SfrNodeComponent {
 
   protected readonly isHidden = computed(() => {
     const node = this.node();
-    if (isRegion(node)) return false;
-    // A custom layout-level hidden signal always wins.
-    if (node.hidden) return node.hidden();
-    // Otherwise defer to the related field's native hidden() (signal forms schema rule):
-    // always present for controls, optional for groups/arrays that map to a field.
+    if (isConditional(node)) return false;
+    // Defer to the related field's native hidden() (signal forms schema rule): always present
+    // for controls, optional for groups/arrays that map to a field.
     return node.field?.().hidden() ?? false;
   });
 
   /** Resolved component type (explicit `component`, else `type` via the registry), or null for fallback rendering. */
   protected readonly resolvedComponent = computed((): Type<unknown> | null => {
     const node = this.node();
-    if (isRegion(node)) return null;
+    if (isConditional(node)) return null;
     return node.component ?? this.registry[node.type!] ?? null;
   });
 
@@ -97,7 +95,7 @@ export class SfrNodeComponent {
   protected readonly directives = computed(
     (): (Type<unknown> | DirectiveWithBindings<unknown>)[] | undefined => {
       const node = this.node();
-      if (isRegion(node)) return undefined;
+      if (isConditional(node)) return undefined;
       const result: (Type<unknown> | DirectiveWithBindings<unknown>)[] = [];
       if (node.kind === 'control' && this.componentIo()?.isFormControl) {
         const field = node.field;
@@ -124,7 +122,7 @@ export class SfrNodeComponent {
    */
   protected readonly bindings = computed((): Binding[] => {
     const node = this.node();
-    if (isRegion(node)) return [];
+    if (isConditional(node)) return [];
     const io = this.componentIo();
     const reserved: Binding[] = [];
     const bind = (name: string, value: () => unknown) => {
@@ -221,7 +219,7 @@ export class SfrNodeComponent {
           'active, so its components were recreated (inputs lose focus and local state). Read ' +
           'values inside binding closures (inputBinding(name, () => …)), or wrap an accidental ' +
           'read in untracked(() => …). Shown once per branch function; later re-runs are not ' +
-          'logged.\nRegion:',
+          `logged.\n${this.node().kind}():`,
         this.host.nativeElement,
       );
     }
@@ -235,7 +233,7 @@ export class SfrNodeComponent {
    */
   protected readonly children = computed((): LayoutNode[] => {
     const node = this.node();
-    if (isRegion(node)) return this.branchNodes();
+    if (isConditional(node)) return this.branchNodes();
     if (node.kind === 'group') return Object.values(node.children);
     if (node.kind === 'array') return node.itemLayout ? this.arrayItems() : (node.children ?? []);
     return [];
@@ -254,7 +252,7 @@ export class SfrNodeComponent {
   });
 }
 
-/** `when`/`switchCase` nodes: renderless regions with no component, bindings or field. */
-function isRegion(node: LayoutNode): node is WhenNode | SwitchCaseNode {
+/** `when`/`switchCase` nodes: they render their active branch, with no component, bindings or field. */
+function isConditional(node: LayoutNode): node is WhenNode | SwitchCaseNode {
   return node.kind === 'when' || node.kind === 'switchCase';
 }

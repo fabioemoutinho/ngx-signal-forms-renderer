@@ -39,7 +39,7 @@ provideSignalFormsRenderer({
 
 ```typescript
 import { inputBinding } from '@angular/core';
-import { layout, control, group, array } from 'ngx-signal-forms-renderer';
+import { layout, control, group, array, when, switchCase } from 'ngx-signal-forms-renderer';
 
 // control(fieldRef, options?) — renders a form control
 control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
@@ -48,7 +48,6 @@ control(f.bio, { component: RichTextEditor })
 // group(children, options?) — explicit keyed children
 group({ name: control(f.name) })
 group({ name: control(f.name) }, { type: 'card', bindings: [inputBinding('title', () => 'Info')] })
-group({ x: control(f.x) }, { hidden: computed(() => someSignal()) })
 
 // group(fieldRef, fn) or group(fieldRef, options, fn) — data-driven from a sub-object field
 group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
@@ -57,6 +56,13 @@ group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
 array(f.addresses, (addr) => group(addr, (a) => ({ street: control(a.street) })))
 array(f.items, { component: ItemList })            // renderer-owned: component receives the field
 array([control(f.step1), control(f.step2)])        // static ordered nodes
+
+// when(condition, () => nodes, () => elseNodes?) — conditional layout (the layout's @if)
+when(isBusiness, () => [control(f.company)], () => control(f.birthDate))
+when(f.company, () => group({ company: control(f.company) }, { type: 'card' }))  // while field visible
+
+// switchCase(key, cases, { default? }) — multi-branch layout (the layout's @switch)
+switchCase(f.plan, { business: () => control(f.company) }, { default: () => [] })
 
 // layout(formRef, fn) — returns Signal<LayoutNode[]>
 const myLayout = layout(myForm, (f) => [
@@ -135,7 +141,9 @@ export class MyGroupComponent {
 ### Visibility
 
 - **Nodes mapped to a field** (controls, data-driven groups/arrays): use signal forms `hidden()` in the schema. The renderer reads `field().hidden()` automatically.
-- **Any node**: `hidden?: Signal<boolean>` on the layout node takes precedence — use it for layout-only nodes or to override. Prefer it over branching inside `layout()`: re-running `layout()` recreates every component.
+- **Layout structure** (a card around several fields, a sub-form per type): use `when()` / `switchCase()`. A branch is rebuilt only when its condition flips. `when(f.x, …)` renders while field `x` is visible, so validity conditions stay in the schema.
+- Branches are layout only — fields in an inactive branch still validate. Pair with `hidden()` / `applyWhenValue()` in the schema.
+- Branching on a signal inside `layout()` also works, but every re-run recreates all rendered components (dev-mode warning). Fine for rarely-changing structure (loaded config); use `when()` / `switchCase()` for anything that changes while the user types.
 
 ### Layout Composability
 

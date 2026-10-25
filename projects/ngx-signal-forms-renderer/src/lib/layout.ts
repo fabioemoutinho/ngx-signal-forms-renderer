@@ -120,7 +120,7 @@ export function array<T>(
 // ── when() ─────────────────────────────────────────────────────────────────
 
 /**
- * Creates a conditional region: renders the `nodes` branch while `condition` is true, else the
+ * Conditional layout (the layout's `@if`): renders the `nodes` branch while `condition` is true, else the
  * `elseNodes` branch (or nothing). Renders no element of its own.
  *
  * `condition` is a signal or function returning a boolean, or a field: `when(f.company, …)`
@@ -157,7 +157,7 @@ export function when<T>(
 export type SwitchCaseKey<K> = K extends string | number | boolean | bigint ? `${K}` : never;
 
 /**
- * Creates a multi-branch region (the layout's `@switch`): renders the case whose name equals
+ * Multi-branch layout (the layout's `@switch`): renders the case whose name equals
  * `String(key)`, else the `default` branch (or nothing). A `null`/`undefined` key renders
  * `default`. Renders no element of its own.
  *

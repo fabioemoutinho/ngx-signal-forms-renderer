@@ -1,6 +1,6 @@
-import { computed, inputBinding } from '@angular/core';
+import { inputBinding } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
-import { control, group, array, LayoutNode } from 'ngx-signal-forms-renderer';
+import { control, group, array, when, LayoutNode } from 'ngx-signal-forms-renderer';
 import { CardGroupComponent } from '../components/card-group.component';
 import { SortableListComponent } from '../components/sortable-list.component';
 import { ProductPickerComponent } from '../components/product-picker.component';
@@ -58,12 +58,11 @@ function sectionGroup(node: SectionConfig, f: FieldTree<CheckoutModel>): LayoutN
       (g) => fieldsRecord(node.fields, g),
     );
   }
-  const hidden = node.when ? computed(() => !matches(node.when!, f().value())) : undefined;
-  return group(fieldsRecord(node.fields, f), {
-    component: CardGroupComponent,
-    bindings: [titleBinding],
-    hidden,
-  });
+  const section = () =>
+    group(fieldsRecord(node.fields, f), { component: CardGroupComponent, bindings: [titleBinding] });
+  // Conditional sections are wrapped in when(): the section is built when shown, and rebuilt only
+  // when the condition flips, not on every value change.
+  return node.when ? when(() => matches(node.when!, f().value()), section) : section();
 }
 
 function fieldsRecord(fields: FieldConfig[], node: FieldTree<unknown>): Record<string, LayoutNode> {

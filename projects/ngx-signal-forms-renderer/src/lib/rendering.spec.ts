@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { computed, inputBinding, signal } from '@angular/core';
+import { inputBinding, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FieldTree, hidden } from '@angular/forms/signals';
 import { array, control, group } from './layout';
@@ -76,24 +76,6 @@ describe('component stability', () => {
     expect(build).toHaveBeenCalledTimes(1);
   });
 
-  it('does not recreate anything when the same condition is expressed as a node-level hidden', async () => {
-    const { host, act, all } = await renderForm({ country: 'US', state: '' }, (f) => [
-      control(f.country, { component: TrackedControl }),
-      control(f.state, {
-        component: TrackedControl,
-        hidden: computed(() => f.country().value() !== 'US'),
-      }),
-    ]);
-    const [country] = all(TrackedControl);
-
-    await act(() => host.model.update((m) => ({ ...m, country: 'USA' })));
-    expect(all(TrackedControl)).toEqual([country]);
-
-    await act(() => host.model.update((m) => ({ ...m, country: 'US' })));
-    expect(all(TrackedControl)[0]).toBe(country);
-    // Only the conditional control is recreated when it reappears.
-    expect(created).toHaveLength(3);
-  });
 });
 
 // ── Layout re-run warning ─────────────────────────────────────────────────
@@ -339,15 +321,6 @@ describe('visibility', () => {
     expect(all(TrackedControl)).toHaveLength(0);
   });
 
-  it("lets a layout-level hidden signal override the field's hidden()", async () => {
-    const { all } = await renderForm(
-      { name: 'Ada' },
-      (f) => [control(f.name, { component: TrackedControl, hidden: signal(false) })],
-      { schema: (p) => hidden(p.name, { when: () => true }) },
-    );
-    expect(all(TrackedControl)).toHaveLength(1);
-  });
-
   it("hides a data-driven group when its field's hidden() is true", async () => {
     const { all } = await renderForm(
       { address: { street: 'Main' } },
@@ -358,26 +331,13 @@ describe('visibility', () => {
   });
 
   it('renders no DOM at all for a hidden node', async () => {
-    const { fixture } = await renderForm({ name: 'Ada' }, (f) => [
-      control(f.name, { component: TrackedControl, hidden: signal(true) }),
-    ]);
+    const { fixture } = await renderForm(
+      { name: 'Ada' },
+      (f) => [control(f.name, { component: TrackedControl })],
+      { schema: (p) => hidden(p.name, { when: () => true }) },
+    );
     const node: HTMLElement = fixture.nativeElement.querySelector('sfr-node');
     expect(node.children).toHaveLength(0);
-  });
-
-  it('keeps array items (data lives in the form) across hide and show', async () => {
-    const show = signal(true);
-    const { host, act, text } = await renderForm({ items: items('a', 'b') }, (f) => [
-      array(f.items, { hidden: computed(() => !show()) }, (item) =>
-        control(item.name, { component: TrackedControl }),
-      ),
-    ]);
-
-    await act(() => show.set(false));
-    await act(() => host.model.update((m) => ({ items: [...m.items, { name: 'c' }] })));
-    await act(() => show.set(true));
-
-    expect(text()).toBe('a b c');
   });
 });
 

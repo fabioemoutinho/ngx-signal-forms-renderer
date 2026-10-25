@@ -188,9 +188,4 @@ describe('SfrNodeComponent control rendering', () => {
     expect(fixture.debugElement.query(By.directive(StaticControl))).not.toBeNull();
     expect(fixture.debugElement.query(By.directive(FieldControl))).toBeNull();
   });
-
-  it('renders nothing when the layout-level hidden signal is true', async () => {
-    const fixture = await render({ component: FieldControl, hidden: signal(true) });
-    expect(fixture.debugElement.query(By.directive(FieldControl))).toBeNull();
-  });
 });

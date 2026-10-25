@@ -21,7 +21,7 @@ export interface SectionConfig {
    * field's native hidden(). Omit for sections that group top-level fields.
    */
   field?: string;
-  /** Layout-level visibility predicate, e.g. 'plan=Pro' or '!billingSameAsShipping'. */
+  /** Show the section only while this condition holds, e.g. 'plan=Pro' or '!billingSameAsShipping'. */
   when?: string;
 }
 

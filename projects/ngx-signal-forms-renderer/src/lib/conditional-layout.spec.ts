@@ -191,7 +191,7 @@ describe('when', () => {
     expect(count(BRANCH_RERUN)).toBe(0);
   });
 
-  it('warns once when a branch re-runs without a flip, logging the region element', async () => {
+  it('warns once when a branch re-runs without a flip, logging its element', async () => {
     const { warn, count } = spyWarn();
     const flag = signal(false);
     const { fixture, act } = await renderForm({ a: 'a' }, (f) => [

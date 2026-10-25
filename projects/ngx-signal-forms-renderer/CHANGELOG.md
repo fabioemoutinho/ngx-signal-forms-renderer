@@ -13,18 +13,30 @@ may contain breaking changes; they are always called out under **Breaking**.
 - The minimum supported Angular version is now **22.1.0** (peer dependencies `>=22.1.0`). Angular
   22.2.2 or later is recommended: it fixes a value typed into a `debounce(…, 'blur')` field being
   lost when its control is destroyed, which conditional layouts do.
+- The node-level `hidden` option is removed from `control()`, `group()` and `array()`. Use the
+  schema's `hidden()` for conditional fields (nodes still defer to it automatically), or wrap the
+  node in `when()` for conditional layout. A node can no longer be shown while its field is hidden
+  in the schema.
+
+  ```ts
+  // before
+  group({ … }, { component: Card, hidden: computed(() => !isBusiness()) })
+  // after
+  when(isBusiness, () => group({ … }, { component: Card }))
+  ```
+
 - `LayoutNode` now also includes `WhenNode` and `SwitchCaseNode`. An exhaustive
   `switch (node.kind)` over layout nodes needs the new cases, and wrapper components that inspect
   their children (e.g. `children().x.field`) can now meet these nodes, which have no `field`.
 
 ### Added
 
-- `when(condition, () => nodes, () => elseNodes)`: a conditional layout region, the layout's
+- `when(condition, () => nodes, () => elseNodes)`: conditional layout, the layout's
   `@if`. `condition` is a signal or function returning a boolean, or a field — `when(f.company, …)`
   renders while that field is visible in the schema. Branches are builder functions, built only
   when they become active and rebuilt only when the condition flips, so changing the values the
   condition reads keeps the branch's components. Renders no element of its own.
-- `switchCase(key, cases, { default: () => nodes })`: a multi-branch region, the layout's
+- `switchCase(key, cases, { default: () => nodes })`: multi-branch layout, the layout's
   `@switch`. `key` is a function or a field; the case whose name equals `String(key)` renders, else
   `default` (also for a `null`/`undefined` key). Case names are typed against the key's values.
   A case is rebuilt only when the matched case changes.

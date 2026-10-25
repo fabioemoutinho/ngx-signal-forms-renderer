@@ -122,6 +122,8 @@ component you write gets the real `FieldTree`, so it keeps full access to signal
 - **`group`** — a keyed collection of nodes (`Record<string, LayoutNode>`), optionally wrapped in a
   component. Can be data-driven from a sub-object field.
 - **`array`** — a list of nodes: static, renderer-owned, or library-iterated from an array field.
+- **`when`** / **`switchCase`** — conditional layout (the layout's `@if` / `@switch`). They render
+  the active branch's nodes and no element of their own.
 
 ### Component resolution (two-tier)
 
@@ -160,10 +162,12 @@ or the `FormField` directive for `FormValueControl`/`FormCheckboxControl` compon
 
 ### Visibility
 
-- A node that maps to a **field** (any control, or a data-driven group/array) defers to that field's
-  native signal-forms `hidden()`.
-- A **layout-level `hidden`** signal (on any node) takes precedence — use it for elements that don't
-  map to a field, or to override.
+- **Conditional fields** — use signal forms' `hidden()` in the schema. A node that maps to a field
+  (any control, or a data-driven group/array) defers to it automatically, and a hidden field is also
+  excluded from validation.
+- **Conditional layout** — use `when()` / `switchCase()` for structure that doesn't map to a single
+  field (a card around several fields, a sub-form per plan). `when(field, …)` renders while that
+  field is visible, so a condition that affects validity is written once, in the schema.
 
 ```typescript
 // In the signal forms schema (semantic — also excluded from validation)
@@ -171,14 +175,17 @@ const userForm = form(model, (f) => {
   hidden(f.bio, { when: ({ valueOf }) => valueOf(f.role) !== 'admin' });
 });
 
-// Layout-level override
-group({ /* ... */ }, { hidden: computed(() => userForm.role().value() !== 'admin') });
+// In the layout: the card renders while the bio field is visible
+when(f.bio, () => group({ bio: control(f.bio) }, { type: 'card' }));
 ```
+
+Fields inside an inactive `when`/`switchCase` branch still validate, since a branch is layout only.
+Pair the branch with `hidden()` / `applyWhenValue()` in the schema when its fields shouldn't.
 
 ## API Reference
 
-You build layouts with the functions below — you don't construct node objects by hand. Every builder
-accepts the same **options** object:
+You build layouts with the functions below — you don't construct node objects by hand. `control`,
+`group` and `array` accept the same **options** object (`when` and `switchCase` take none):
 
 | Option       | Type                                                | Purpose                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------- |
@@ -186,7 +193,6 @@ accepts the same **options** object:
 | `type`       | `string`                                            | Component registered via `provideSignalFormsRenderer`. |
 | `bindings`   | `Binding[]`                                          | Inputs/outputs (`inputBinding`/`outputBinding`/`twoWayBinding`). |
 | `directives` | `(Type<unknown> \| DirectiveWithBindings<unknown>)[]` | Host directives to attach.                            |
-| `hidden`     | `Signal<boolean>`                                   | Layout-level visibility override.                     |
 
 The builders return `LayoutNode`s — the only type you'll reference directly, as the `children` input
 on custom group/array wrapper components.
@@ -255,9 +261,38 @@ mutation. Use when you want full control over how the array renders and changes.
 array(f.items, { component: ItemsListComponent });
 ```
 
+#### `when(condition, () => nodes, () => elseNodes?)`
+
+Renders the first branch while `condition` is true, else the optional second branch. `condition` is a
+signal or function returning a boolean, or a field (renders while the field is visible). Branches are
+functions returning a node or an array of nodes. A branch is built when it becomes active and rebuilt
+only when the condition flips, so changing the values the condition reads keeps its components.
+
+```typescript
+when(isBusiness, () => [control(f.company), control(f.vatId)]);
+when(() => f.country().value() === 'US', () => control(f.state), () => control(f.region));
+when(f.company, () => group({ company: control(f.company) }, { type: 'card' }));
+```
+
+#### `switchCase(key, cases, { default? })`
+
+Renders the case whose name equals `String(key)`, else `default` (also for a `null`/`undefined` key).
+`key` is a function or a field; case names are typed against its values. A case is rebuilt only when
+the matched case changes.
+
+```typescript
+switchCase(f.plan, {
+  business: () => [control(f.company), control(f.vatId)],
+  personal: () => control(f.birthDate),
+}, { default: () => [] });
+```
+
 #### `layout(form, fn)`
 
-Returns a `Signal<LayoutNode[]>`. Reading signals inside `fn` makes the layout reactive.
+Returns a `Signal<LayoutNode[]>`. If `fn` reads a signal, it re-runs when that signal changes and
+recreates every component it renders (a dev-mode warning says so). That suits structure that changes
+rarely, like fields decided by loaded config; for conditions that change while the user fills the
+form, use `when()` / `switchCase()` or the schema's `hidden()`.
 
 ```typescript
 const myLayout = layout(userForm, (f) => [

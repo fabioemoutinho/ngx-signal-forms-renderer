@@ -1,4 +1,4 @@
-import { Binding, DirectiveWithBindings, Signal, Type } from '@angular/core';
+import { Binding, DirectiveWithBindings, Type } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
 
 /**
@@ -21,12 +21,6 @@ export interface LayoutNodeOptions {
    * (the `FormField` directive auto-attached to `FormValueControl`/`FormCheckboxControl` controls).
    */
   directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[];
-  /**
-   * Layout-level visibility override. When provided, it takes precedence over the
-   * related field's native `hidden()`. Use it to hide layout elements that don't map
-   * to a form field (or to override one that does).
-   */
-  hidden?: Signal<boolean>;
 }
 
 /**
@@ -82,7 +76,7 @@ export interface ArrayNode extends LayoutNodeOptions {
 export type LayoutBranch = () => LayoutNode | LayoutNode[];
 
 /**
- * A conditional region (`when()`): renders `nodes` while `condition` is true, else `else`.
+ * Conditional layout (`when()`): renders `nodes` while `condition` is true, else `else`.
  * Renders no element of its own. The active branch is built only when the condition flips, so
  * its components are kept while the condition's inputs change without flipping it.
  */
@@ -94,7 +88,7 @@ export interface WhenNode {
 }
 
 /**
- * A multi-branch region (`switchCase()`): renders the case whose name equals `String(key())`,
+ * Multi-branch layout (`switchCase()`): renders the case whose name equals `String(key())`,
  * else `default`. Renders no element of its own. The active case is built only when the
  * matched case changes.
  */
