@@ -35,6 +35,8 @@ provideSignalFormsRenderer({
 })
 ```
 
+Calls merge: several in one injector add up, and route/component `providers` extend the parent's registry (child wins on the same key). Use component `providers: [provideSignalFormsRenderer(...)]` to override a type for one form.
+
 ### Builder Functions
 
 ```typescript

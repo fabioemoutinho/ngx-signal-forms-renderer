@@ -13,6 +13,13 @@ may contain breaking changes; they are always called out under **Breaking**.
 - The minimum supported Angular version is now **22.1.0** (peer dependencies `>=22.1.0`). Angular
   22.2.2 or later is recommended: it fixes a value typed into a `debounce(…, 'blur')` field being
   lost when its control is destroyed, which conditional layouts do.
+- `provideSignalFormsRenderer()` registrations now merge instead of replacing each other: several
+  calls in the same injector add up (previously the last one won), and a child injector's registry
+  extends its parent's (previously it replaced it), with the child winning on the same key.
+- `provideSignalFormsRenderer()` returns `Provider[]` instead of `EnvironmentProviders`, so it also
+  works in component `providers`. This only breaks code that typed the result.
+- `SIGNAL_FORMS_RENDERER_TYPE_REGISTRY` is no longer exported. It was marked internal; use
+  `provideSignalFormsRenderer()` to register types.
 - The node-level `hidden` option is removed from `control()`, `group()` and `array()`. Use the
   schema's `hidden()` for conditional fields (nodes still defer to it automatically), or wrap the
   node in `when()` for conditional layout. A node can no longer be shown while its field is hidden
@@ -59,6 +66,11 @@ may contain breaking changes; they are always called out under **Breaking**.
   arrays (which already received `field`). Use them for section-level errors and pending state, or
   to tell an array's `empty` node apart from a single item. Explicit groups and static arrays have
   no field.
+- `provideSignalFormsRenderer()` in route and component `providers`, to add or override types for
+  part of an app. Registering the same key twice in one injector logs a dev-mode warning.
+- A dev-mode warning when a group's or array's `type` isn't registered (it renders its children
+  without a wrapper). The existing warning for controls, and now content, names the unregistered
+  type.
 
 ### Fixed
 

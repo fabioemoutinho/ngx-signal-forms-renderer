@@ -405,12 +405,15 @@ describe('node kinds', () => {
   });
 
   it('warns in dev mode when a control resolves no component', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { count } = spyWarn();
     await renderForm({ name: 'Ada' }, (f) => [control(f.name)]);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('No component resolved'),
-      expect.any(String),
-    );
+    expect(count('No component resolved for control node')).toBe(1);
+  });
+
+  it('names an unregistered control type in the warning', async () => {
+    const { count } = spyWarn();
+    await renderForm({ name: 'Ada' }, (f) => [control(f.name, { type: 'nope' })]);
+    expect(count("Type 'nope' is not registered")).toBe(1);
   });
 });
 
@@ -573,7 +576,29 @@ describe('registry resolution', () => {
     expect(text()).toBe('x');
   });
 
-  it.todo('warns in dev mode when a group or array type is not registered');
+  it('warns in dev mode when a group or array type is not registered', async () => {
+    const { warn, count } = spyWarn();
+    await renderForm(
+      { a: 'x', items: items('a') },
+      (f) => [
+        group({ a: control(f.a, { type: 'text' }) }, { type: 'unknown-card' }),
+        array(f.items, { type: 'unknown-list' }, (item) => control(item.name, { type: 'text' })),
+      ],
+      { providers },
+    );
+    expect(count("Type 'unknown-card' is not registered")).toBe(1);
+    expect(count("Type 'unknown-list' is not registered")).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not warn for a group or array without a type', async () => {
+    const { warn } = spyWarn();
+    await renderForm({ a: 'x', items: items('a') }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }),
+      array(f.items, (item) => control(item.name, { component: TrackedControl })),
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 // ── Layout swap & lifecycle ───────────────────────────────────────────────

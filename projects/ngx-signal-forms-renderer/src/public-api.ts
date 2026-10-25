@@ -20,7 +20,7 @@ export { layout, control, group, array, content, when, switchCase } from './lib/
 export type { ArrayOptions, ContainerOptions, LayoutSignal, SwitchCaseKey } from './lib/layout';
 
 // Provider
-export { provideSignalFormsRenderer, SIGNAL_FORMS_RENDERER_TYPE_REGISTRY } from './lib/provider';
+export { provideSignalFormsRenderer } from './lib/provider';
 export type { SignalFormsRendererConfig, SignalFormsRendererTypeRegistry } from './lib/provider';
 
 // Components and directives

@@ -247,16 +247,29 @@ export class SfrNodeComponent {
     return [];
   });
 
-  /** Dev-mode warning when a control or content node has no component resolved. */
-  readonly #warnMissingComponent = effect(() => {
-    const { kind } = this.node();
-    if ((kind === 'control' || kind === 'content') && !this.resolvedComponent()) {
-      if (typeof ngDevMode === 'undefined' || ngDevMode) {
-        console.warn(
-          `[ngx-signal-forms-renderer] No component resolved for ${kind} node.`,
-          `Provide a 'component' or 'type' in the ${kind}() call, or register a type in provideSignalFormsRenderer().`,
-        );
-      }
+  /**
+   * Dev-mode warning when a node's component doesn't resolve: a control or content node renders
+   * nothing, and a group or array with an unregistered `type` renders its children without a
+   * wrapper.
+   */
+  readonly #warnUnresolved = effect(() => {
+    const node = this.node();
+    if (isConditional(node) || this.resolvedComponent()) return;
+    const { kind, type } = node;
+    const unregistered = type ? ` Type '${type}' is not registered.` : '';
+    if (kind === 'control' || kind === 'content') {
+      warnOnce(
+        node,
+        `No component resolved for ${kind} node, so it renders nothing.${unregistered} Provide a ` +
+          `'component' or 'type' in the ${kind}() call, or register the type in ` +
+          'provideSignalFormsRenderer().',
+      );
+    } else if (type) {
+      warnOnce(
+        node,
+        `No component resolved for ${kind} node, so its children render without a wrapper.` +
+          `${unregistered} Register it in provideSignalFormsRenderer().`,
+      );
     }
   });
 }

@@ -330,6 +330,24 @@ provideSignalFormsRenderer({
 });
 ```
 
+Registrations merge. Several calls in the same injector add up (a feature library can ship its own
+`provideSignalFormsRenderer` next to the app's), and a route's or component's registry extends its
+parent's — add or override types for one part of the app without repeating the rest. Where both
+define a key, the child's wins. It works in `ApplicationConfig.providers`, route `providers` and
+component `providers`:
+
+```typescript
+@Component({
+  providers: [provideSignalFormsRenderer({ types: { card: CompactCardComponent } })],
+  template: `<sfr-form [layout]="layout" />`, // `card` is compact here; other types come from the app
+})
+export class SidebarFormComponent {}
+```
+
+Registering the same key twice in one injector logs a dev-mode warning (the last one wins). A node whose
+`type` isn't registered also warns: controls and content render nothing, groups and arrays render
+their children without a wrapper.
+
 ### Components
 
 #### `<sfr-form>`
