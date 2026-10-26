@@ -158,6 +158,27 @@ describe('when', () => {
     expect(text()).toBe('a');
   });
 
+  it('works inside a data-driven group, keeping the group and its other children', async () => {
+    const { host, act, all, text } = await renderForm(
+      { hasApt: false, address: { street: 'Main', apt: '4B' } },
+      (f) => [
+        group(f.address, { component: CardWrapper }, (a) => ({
+          street: control(a.street, { component: TrackedControl }),
+          apt: when(() => f.hasApt().value(), () => control(a.apt, { component: TrackedControl })),
+        })),
+      ],
+    );
+    const [card] = all(CardWrapper);
+    const [street] = all(TrackedControl);
+    expect(text()).toBe('Main');
+
+    await act(() => host.f.hasApt().value.set(true));
+
+    expect(text()).toBe('Main 4B');
+    expect(all(CardWrapper)).toEqual([card]);
+    expect(all(TrackedControl)[0]).toBe(street);
+  });
+
   it('works inside array items, keeping rows across reorders', async () => {
     const { host, act, ids, expectStable } = await renderForm({ items: items('a', 'b') }, (f) => [
       array(f.items, (item) =>

@@ -1,12 +1,12 @@
-import { Component, input } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { SfrNodeComponent, LayoutNode } from 'ngx-signal-forms-renderer';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 
 /**
- * Renderer-owned array wrapper: renders each item's LayoutNode and adds list-level
- * controls (reorder ↑/↓, per-item remove, and an "add" button after the list).
- * The add/remove/move actions are supplied by the consumer as callbacks.
+ * Wrapper for a library-iterated array: renders each item's LayoutNode and adds list-level
+ * controls (reorder ↑/↓, per-item remove, and an "add" button after the list). It only emits
+ * the actions; the layout decides what they do to the array (see the array-actions recipe).
  */
 @Component({
   selector: 'app-sortable-list',
@@ -15,27 +15,23 @@ import { MatIcon } from '@angular/material/icon';
     @for (node of children(); track node; let i = $index; let count = $count) {
       <div class="item-row">
         <div class="sort-controls">
-          <button matIconButton (click)="onMove()(i, i - 1)" [disabled]="i === 0" aria-label="Move up">
+          <button matIconButton (click)="move.emit({ from: i, to: i - 1 })" [disabled]="i === 0" aria-label="Move up">
             <mat-icon>arrow_upward</mat-icon>
           </button>
-          <button matIconButton (click)="onMove()(i, i + 1)" [disabled]="i === count - 1" aria-label="Move down">
+          <button matIconButton (click)="move.emit({ from: i, to: i + 1 })" [disabled]="i === count - 1" aria-label="Move down">
             <mat-icon>arrow_downward</mat-icon>
           </button>
         </div>
         <div class="item-body"><sfr-node [node]="node" /></div>
-        @if (onRemove(); as remove) {
-          <button matIconButton class="remove" (click)="remove(i)" [disabled]="count === 1" aria-label="Remove item">
-            <mat-icon>delete</mat-icon>
-          </button>
-        }
+        <button matIconButton class="remove" (click)="remove.emit(i)" [disabled]="count === 1" aria-label="Remove item">
+          <mat-icon>delete</mat-icon>
+        </button>
       </div>
     }
-    @if (onAdd(); as add) {
-      <button matButton="outlined" class="add" (click)="add()">
-        <mat-icon>add</mat-icon>
-        Add item
-      </button>
-    }
+    <button matButton="outlined" class="add" (click)="add.emit()">
+      <mat-icon>add</mat-icon>
+      Add item
+    </button>
   `,
   styles: `
     :host { display: flex; flex-direction: column; gap: 12px; }
@@ -49,7 +45,7 @@ import { MatIcon } from '@angular/material/icon';
 })
 export class SortableListComponent {
   readonly children = input.required<LayoutNode[]>();
-  readonly onMove = input.required<(from: number, to: number) => void>();
-  readonly onAdd = input<() => void>();
-  readonly onRemove = input<(index: number) => void>();
+  readonly move = output<{ from: number; to: number }>();
+  readonly add = output<void>();
+  readonly remove = output<number>();
 }

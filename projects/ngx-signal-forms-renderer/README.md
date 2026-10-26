@@ -19,7 +19,8 @@ You bring your own control components; the renderer wires them to the form.
 npm install ngx-signal-forms-renderer
 ```
 
-> Requires Angular 22+.
+> Requires Angular 22.1 or later; 22.2.2+ is recommended (it fixes a `debounce(…, 'blur')` value
+> being lost when its control is destroyed, which conditional layouts do).
 
 ## Quick Start
 

@@ -1,4 +1,4 @@
-import { inputBinding } from '@angular/core';
+import { inputBinding, outputBinding } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
 import { control, group, array, when, LayoutNode } from 'ngx-signal-forms-renderer';
 import { CardGroupComponent } from '../components/card-group.component';
@@ -36,9 +36,9 @@ function buildNode(node: NodeConfig, f: FieldTree<CheckoutModel>, cb: AdapterCal
         {
           component: SortableListComponent,
           bindings: [
-            inputBinding('onMove', () => cb.moveItem),
-            inputBinding('onAdd', () => cb.addItem),
-            inputBinding('onRemove', () => cb.removeItem),
+            outputBinding<{ from: number; to: number }>('move', ({ from, to }) => cb.moveItem(from, to)),
+            outputBinding('add', () => cb.addItem()),
+            outputBinding<number>('remove', (index) => cb.removeItem(index)),
           ],
         },
         lineItemLayout,

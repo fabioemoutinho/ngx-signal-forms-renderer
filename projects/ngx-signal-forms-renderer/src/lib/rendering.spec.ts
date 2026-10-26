@@ -475,6 +475,24 @@ describe('wrapper bindings', () => {
 
     expect(all(CardWrapper)[0].title()).toBe('Two');
   });
+  it('updates a reactive binding on an array wrapper in place, keeping its rows', async () => {
+    const label = signal('Items');
+    const { fixture, all, expectStable } = await renderForm({ items: items('a', 'b') }, (f) => [
+      array(
+        f.items,
+        { component: ListWrapper, bindings: [inputBinding('label', label)], directives: [MarkerDirective] },
+        (item) => control(item.name, { component: TrackedControl }),
+      ),
+    ]);
+    const el: HTMLElement = fixture.nativeElement.querySelector('test-list-wrapper');
+    expect(el.dataset['marker']).toBe('yes');
+
+    await expectStable(() => label.set('Things'));
+
+    expect(all(ListWrapper)[0].label()).toBe('Things');
+    expect(el.textContent).toContain('Things');
+  });
+
   describe('field and state', () => {
     it('passes them to a data-driven group wrapper, for section-level errors', async () => {
       const { host, act, all, fixture } = await renderForm(

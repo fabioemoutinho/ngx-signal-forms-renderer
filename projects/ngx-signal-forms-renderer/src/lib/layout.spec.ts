@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 import { signal, inputBinding } from '@angular/core';
-import { FieldTree } from '@angular/forms/signals';
-import { control, group, array, layout } from './layout';
+import { TestBed } from '@angular/core/testing';
+import { FieldTree, form } from '@angular/forms/signals';
+import { control, group, array, content, layout } from './layout';
 
 function mockFieldTree<T>(value: T): any {
   const state = {
@@ -179,7 +180,30 @@ describe('layout()', () => {
     const r1 = layoutFn();
     const r2 = layoutFn();
     expect(r1.length).toBe(1);
-    expect(r2.length).toBe(1);
     expect(r1[0].kind).toBe('group');
+    // The layout is a computed: reading it again returns the same nodes, not a rebuilt copy.
+    expect(r2).toBe(r1);
+  });
+});
+
+describe('builder types', () => {
+  const makeForm = () =>
+    TestBed.runInInjectionContext(() => form(signal({ items: [{ name: 'a' }] })));
+
+  it("infers the item field's type in an item layout", () => {
+    const f = makeForm();
+    array(f.items, (item) => {
+      expectTypeOf(item.name).toEqualTypeOf(f.items[0].name);
+      // @ts-expect-error — not a field of the item
+      void item.nope;
+      return control(item.name);
+    });
+  });
+
+  it('gives content nodes no field', () => {
+    const node = content('heading');
+    // @ts-expect-error — content isn't bound to a field
+    void node.field;
+    expect(node).toEqual({ kind: 'content', type: 'heading' });
   });
 });

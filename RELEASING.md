@@ -42,6 +42,7 @@ the npm package, and each GitHub Release's notes are taken from it.
    ```
 3. Commit both and merge to `main`.
 4. CI (`.github/workflows/publish.yml`) then:
+   - runs the **tests** first (`test.yml`) and stops if they fail,
    - **skips** if that version is already on npm (so re-runs are safe),
    - builds the library (`ng build ngx-signal-forms-renderer`),
    - publishes with a dist-tag derived from the version (see below),
@@ -56,8 +57,11 @@ The npm **dist-tag** is derived from the version string:
 
 - A **prerelease** version (e.g. `0.0.1-beta.0`) publishes under the **`beta`** tag (the suffix
   before the first `.` becomes the tag, so `-next.0` → `next`, `-rc.1` → `rc`) and the GitHub
-  Release is marked _pre-release_. `npm install ngx-signal-forms-renderer` does **not** pull it;
-  only `npm install ngx-signal-forms-renderer@beta` does. `latest` stays untouched.
+  Release is marked _pre-release_. Publishing never moves `latest`.
+  **Until the first stable release**, npm still requires a `latest` tag, so it points at a beta and a
+  plain `npm install` gets whatever beta `latest` names. After publishing a beta, move it by hand
+  (needs your npm login): `npm dist-tag add ngx-signal-forms-renderer@<version> latest`. Once a
+  stable version exists, prereleases stay on `beta` only.
 - A **plain** version (e.g. `0.0.1`) publishes to **`latest`**.
 
 ```bash
@@ -83,3 +87,4 @@ npm version 0.0.1 --no-git-tag-version                     # (or: patch/minor/ma
   and attach **provenance** automatically (no `--provenance` flag, public repo required).
 - **Pre-1.0.** While on `0.x`, treat any release as potentially breaking (semver allows it).
 - The demo site deploy (GitHub Pages, `.github/workflows/deploy.yml`) is separate from publishing.
+- `test.yml` also runs on every pull request and push to `main`.

@@ -9,7 +9,7 @@ import {
   schema,
 } from '@angular/forms/signals';
 import { productOf } from './catalog';
-import { CheckoutModel } from './checkout.model';
+import { CheckoutModel, LineItem } from './checkout.model';
 
 /**
  * Field metadata key carrying the catalog stock for a line item's quantity field.
@@ -36,9 +36,29 @@ export const checkoutFormSchema = schema<CheckoutModel>((f) => {
     required(item.sku);
     // Stock of the chosen product, surfaced as field metadata (derived from the sibling sku).
     metadata(item.quantity, STOCK, ({ valueOf }) => productOf(valueOf(item.sku))?.stock ?? 0);
-    // Quantity may not exceed available stock.
-    max(item.quantity, ({ valueOf }) => productOf(valueOf(item.sku))?.stock ?? 0, {
-      message: ({ valueOf }) => `Only ${productOf(valueOf(item.sku))?.stock ?? 0} in stock`,
+    // The order may not exceed the stock: rows of the same product share it, so each row may take
+    // what the other rows leave.
+    max(item.quantity, ({ valueOf }) => {
+      const row = valueOf(item);
+      return Math.max(0, stockOf(row) - otherRowsQuantity(valueOf(f.items), row));
+    }, {
+      message: ({ valueOf }) => {
+        const row = valueOf(item);
+        const others = otherRowsQuantity(valueOf(f.items), row);
+        const stock = stockOf(row);
+        return others ? `Only ${stock} in stock (${others} in other rows)` : `Only ${stock} in stock`;
+      },
     });
   });
 });
+
+function stockOf(row: LineItem): number {
+  return productOf(row.sku)?.stock ?? 0;
+}
+
+/** Quantity of the same product in the order's other rows (rows are compared by identity). */
+function otherRowsQuantity(items: LineItem[], row: LineItem): number {
+  return items
+    .filter((other) => other !== row && other.sku === row.sku)
+    .reduce((sum, other) => sum + (other.quantity || 0), 0);
+}
