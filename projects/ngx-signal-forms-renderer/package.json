@@ -1,6 +1,6 @@
 {
   "name": "ngx-signal-forms-renderer",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.1-beta.2",
   "description": "Render Angular Signal Forms from a declarative layout.",
   "license": "MIT",
   "author": "fabioemoutinho (https://github.com/fabioemoutinho)",
@@ -20,9 +20,9 @@
     "dynamic-forms"
   ],
   "peerDependencies": {
-    "@angular/common": ">=22.0.0",
-    "@angular/core": ">=22.0.0",
-    "@angular/forms": ">=22.0.0"
+    "@angular/common": ">=22.1.0",
+    "@angular/core": ">=22.1.0",
+    "@angular/forms": ">=22.1.0"
   },
   "dependencies": {
     "tslib": "^2.3.0"

@@ -82,7 +82,8 @@ export class CheckoutFormComponent {
   }
 
   protected reset(): void {
-    this.model.set(emptyOrder());
+    // Resets the value and the touched/dirty state, so errors from the previous order disappear.
+    this.checkout().reset(emptyOrder());
   }
 
   /** Simulated async load of an existing order — proves create vs edit + hydration. */

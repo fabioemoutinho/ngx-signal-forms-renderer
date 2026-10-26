@@ -35,11 +35,13 @@ provideSignalFormsRenderer({
 })
 ```
 
+Calls merge: several in one injector add up, and route/component `providers` extend the parent's registry (child wins on the same key). Use component `providers: [provideSignalFormsRenderer(...)]` to override a type for one form.
+
 ### Builder Functions
 
 ```typescript
 import { inputBinding } from '@angular/core';
-import { layout, control, group, array } from 'ngx-signal-forms-renderer';
+import { layout, control, group, array, content, when, switchCase } from 'ngx-signal-forms-renderer';
 
 // control(fieldRef, options?) — renders a form control
 control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
@@ -48,7 +50,6 @@ control(f.bio, { component: RichTextEditor })
 // group(children, options?) — explicit keyed children
 group({ name: control(f.name) })
 group({ name: control(f.name) }, { type: 'card', bindings: [inputBinding('title', () => 'Info')] })
-group({ x: control(f.x) }, { hidden: computed(() => someSignal()) })
 
 // group(fieldRef, fn) or group(fieldRef, options, fn) — data-driven from a sub-object field
 group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
@@ -57,6 +58,17 @@ group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
 array(f.addresses, (addr) => group(addr, (a) => ({ street: control(a.street) })))
 array(f.items, { component: ItemList })            // renderer-owned: component receives the field
 array([control(f.step1), control(f.step2)])        // static ordered nodes
+array(f.items, { empty: content('hint') }, itemLayout)  // `empty` renders while there are no items
+
+// content(typeOrComponent, { bindings?, directives? }) — a component not bound to a field
+content('heading', { bindings: [inputBinding('text', () => 'Billing')] })
+
+// when(condition, () => nodes, () => elseNodes?) — conditional layout (the layout's @if)
+when(isBusiness, () => [control(f.company)], () => control(f.birthDate))
+when(f.company, () => group({ company: control(f.company) }, { type: 'card' }))  // while field visible
+
+// switchCase(key, cases, { default? }) — multi-branch layout (the layout's @switch)
+switchCase(f.plan, { business: () => control(f.company) }, { default: () => [] })
 
 // layout(formRef, fn) — returns Signal<LayoutNode[]>
 const myLayout = layout(myForm, (f) => [
@@ -128,6 +140,7 @@ Both of Angular's custom-control contracts are supported: `FormValueControl<T>` 
 })
 export class MyGroupComponent {
   readonly children = input.required<Record<string, LayoutNode>>(); // provided by the library
+  readonly state = input<FieldState<unknown>>(); // optional — data-driven groups/array fields only
   readonly title = input(''); // from bindings
 }
 ```
@@ -135,7 +148,9 @@ export class MyGroupComponent {
 ### Visibility
 
 - **Nodes mapped to a field** (controls, data-driven groups/arrays): use signal forms `hidden()` in the schema. The renderer reads `field().hidden()` automatically.
-- **Any node**: `hidden?: Signal<boolean>` on the layout node takes precedence — use it for layout-only nodes or to override. Prefer it over branching inside `layout()`: re-running `layout()` recreates every component.
+- **Layout structure** (a card around several fields, a sub-form per type): use `when()` / `switchCase()`. A branch is rebuilt only when its condition flips. `when(f.x, …)` renders while field `x` is visible, so validity conditions stay in the schema.
+- Branches are layout only — fields in an inactive branch still validate. Pair with `hidden()` / `applyWhenValue()` in the schema.
+- Branching on a signal inside `layout()` also works, but every re-run recreates all rendered components (dev-mode warning). Fine for rarely-changing structure (loaded config); use `when()` / `switchCase()` for anything that changes while the user types.
 
 ### Layout Composability
 
@@ -163,4 +178,8 @@ layout(orderForm, (f) => [
 - For Pattern B, `value` must be a `model()` (ModelSignal), not `input()` — it's two-way bound
 - Use `protected readonly` for template-bound members, `private readonly` for internal state
 - The library is UI-agnostic — bring your own components (Material, PrimeNG, custom, etc.)
-- Requires Angular 22+ (signal forms)
+- Requires Angular 22.1+ (signal forms); 22.2.2+ recommended
+- Array item actions: remove by identity (`items.filter(i => i !== item().value())`); `keyInParent()` is a string at runtime — wrap it in `Number()` for index math
+- Clear a dependent value on user edits with `outputBinding('valueChange', …)` on the driving control (it doesn't fire when the model is set from code)
+- Submission is signal forms' job: wrap `<sfr-form>` in `<form [formRoot]="f">` with `form(model, schema, { submission: { action, onInvalid } })`
+- More patterns: RECIPES.md in the library (sub-form per type, form-level errors, focus first error, file control)

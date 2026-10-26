@@ -1,4 +1,4 @@
-import { Binding, DirectiveWithBindings, Signal, Type } from '@angular/core';
+import { Binding, DirectiveWithBindings, Type } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
 
 /**
@@ -21,12 +21,6 @@ export interface LayoutNodeOptions {
    * (the `FormField` directive auto-attached to `FormValueControl`/`FormCheckboxControl` controls).
    */
   directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[];
-  /**
-   * Layout-level visibility override. When provided, it takes precedence over the
-   * related field's native `hidden()`. Use it to hide layout elements that don't map
-   * to a form field (or to override one that does).
-   */
-  hidden?: Signal<boolean>;
 }
 
 /**
@@ -48,8 +42,8 @@ export interface ControlNode<TValue = unknown> extends LayoutNodeOptions {
  * template locations, or iterate all values.
  *
  * `field` is set when the group is data-driven (`group(f.address, ...)`), so its
- * visibility can defer to that field's native `hidden()`. Explicit-children groups
- * (`group({ ... })`) have no field.
+ * visibility can defer to that field's native `hidden()`, and a wrapper that declares
+ * `field`/`state` inputs receives them. Explicit-children groups (`group({ ... })`) have no field.
  */
 export interface GroupNode extends LayoutNodeOptions {
   readonly kind: 'group';
@@ -73,7 +67,54 @@ export interface ArrayNode extends LayoutNodeOptions {
   readonly field?: FieldTree<any[]>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly itemLayout?: (item: FieldTree<any>) => LayoutNode;
+  /** Library-iterated arrays: rendered (as the only child) while the array has no items. */
+  readonly empty?: LayoutNode;
+}
+
+/**
+ * A content node: a component that isn't bound to a field — a heading, help text, an alert,
+ * form-level errors, a derived value. It receives only its own `bindings`; the renderer binds no
+ * inputs of its own. Renders nothing when no component is resolved.
+ */
+export interface ContentNode extends LayoutNodeOptions {
+  readonly kind: 'content';
+}
+
+/**
+ * Builds the nodes of a `when`/`switchCase` branch. Called only while the branch is active, and
+ * again each time it becomes active.
+ */
+export type LayoutBranch = () => LayoutNode | LayoutNode[];
+
+/**
+ * Conditional layout (`when()`): renders `nodes` while `condition` is true, else `else`.
+ * Renders no element of its own. The active branch is built only when the condition flips, so
+ * its components are kept while the condition's inputs change without flipping it.
+ */
+export interface WhenNode {
+  readonly kind: 'when';
+  readonly condition: () => boolean;
+  readonly nodes: LayoutBranch;
+  readonly else?: LayoutBranch;
+}
+
+/**
+ * Multi-branch layout (`switchCase()`): renders the case whose name equals `String(key())`,
+ * else `default`. Renders no element of its own. The active case is built only when the
+ * matched case changes.
+ */
+export interface SwitchCaseNode {
+  readonly kind: 'switchCase';
+  readonly key: () => unknown;
+  readonly cases: Readonly<Record<string, LayoutBranch>>;
+  readonly default?: LayoutBranch;
 }
 
 /** Union of all layout node types. */
-export type LayoutNode = ControlNode | GroupNode | ArrayNode;
+export type LayoutNode =
+  | ControlNode
+  | GroupNode
+  | ArrayNode
+  | ContentNode
+  | WhenNode
+  | SwitchCaseNode;

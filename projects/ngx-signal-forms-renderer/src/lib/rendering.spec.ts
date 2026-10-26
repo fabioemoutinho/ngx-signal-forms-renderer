@@ -1,132 +1,29 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import {
-  Component,
-  computed,
-  Directive,
-  input,
-  inputBinding,
-  model,
-  OnDestroy,
-  signal,
-  Type,
-  WritableSignal,
-} from '@angular/core';
+import { inputBinding, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
+import { FieldTree, hidden, required } from '@angular/forms/signals';
+import { array, content, control, group } from './layout';
+import { provideSignalFormsRenderer } from './provider';
 import {
-  FieldTree,
-  form,
-  FormCheckboxControl,
-  hidden,
-  SchemaOrSchemaFn,
-} from '@angular/forms/signals';
-import { array, control, group, layout } from './layout';
-import { LayoutNode } from './layout-types';
-import { SfrChildrenComponent } from './children.component';
-import { SfrFormComponent } from './sfr-form.component';
+  CardWrapper,
+  CheckboxControl,
+  created,
+  destroyed,
+  FieldWrapper,
+  Item,
+  items,
+  ListWrapper,
+  MarkerDirective,
+  OwnedList,
+  renderForm,
+  resetTracking,
+  spyWarn,
+  StaticWrapper,
+  TextContent,
+  TrackedControl,
+} from './testing/harness';
 
-// ── Instrumented test components ──────────────────────────────────────────
-
-/** Every live/destroyed instance of the tracked components, reset before each test. */
-const created: object[] = [];
-const destroyed: object[] = [];
-
-/** Plain control that records its own creation and destruction. */
-@Component({ selector: 'test-tracked', template: '{{ field()().value() }}' })
-class TrackedControl implements OnDestroy {
-  readonly field = input.required<FieldTree<string>>();
-  readonly label = input('');
-  constructor() {
-    created.push(this);
-  }
-  ngOnDestroy(): void {
-    destroyed.push(this);
-  }
-}
-
-/** Array wrapper that renders its items through the public `<sfr-children>` helper. */
-@Component({
-  selector: 'test-list-wrapper',
-  imports: [SfrChildrenComponent],
-  template: `<sfr-children [children]="children()" />`,
-})
-class ListWrapper {
-  readonly children = input.required<LayoutNode[]>();
-}
-
-/** Group wrapper that places children by key. */
-@Component({
-  selector: 'test-card',
-  imports: [SfrChildrenComponent],
-  template: `<section><sfr-children [children]="children()" /></section>`,
-})
-class CardWrapper {
-  readonly children = input.required<Record<string, LayoutNode>>();
-}
-
-/** Renderer-owned array component: receives the array field itself. */
-@Component({ selector: 'test-owned-list', template: '{{ field()().value().length }}' })
-class OwnedList {
-  readonly field = input.required<FieldTree<{ name: string }[]>>();
-}
-
-/** Checkbox-style custom control (`checked` model instead of `value`). */
-@Component({ selector: 'test-checkbox', template: '{{ checked() }}' })
-class CheckboxControl implements FormCheckboxControl {
-  readonly checked = model(false);
-}
-
-/** Consumer host directive, to verify it is attached alongside the renderer's own. */
-@Directive({ selector: '[testMarker]', host: { 'data-marker': 'yes' } })
-class MarkerDirective {}
-
-// ── Harness ────────────────────────────────────────────────────────────────
-
-async function renderForm<T>(
-  initial: T,
-  build: (f: FieldTree<T>) => LayoutNode[],
-  schema?: SchemaOrSchemaFn<T>,
-) {
-  @Component({
-    imports: [SfrFormComponent],
-    template: `<sfr-form [layout]="l" />`,
-  })
-  class Host {
-    readonly model: WritableSignal<T> = signal(initial);
-    readonly f: FieldTree<T> = schema ? form(this.model, schema) : form(this.model);
-    readonly l = layout(this.f, build);
-  }
-
-  const fixture = TestBed.createComponent(Host);
-  await fixture.whenStable();
-  const host = fixture.componentInstance;
-  /**
-   * Applies a change, then waits for Angular's (zoneless) scheduler to settle — no forced
-   * detectChanges, so a change only renders if it actually schedules a tick, and assertions run
-   * after every follow-up tick, not just the first.
-   */
-  const act = async (fn: () => void) => {
-    fn();
-    await fixture.whenStable();
-  };
-  /** Rendered instances of a component, in DOM order. */
-  const all = <C>(type: Type<C>): C[] =>
-    fixture.debugElement.queryAll(By.directive(type)).map((d) => d.componentInstance);
-  /** Text of each rendered leaf control, space-joined in DOM order (e.g. 'a b c'). */
-  const text = () =>
-    Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('test-tracked, test-checkbox'))
-      .map((el) => el.textContent?.trim())
-      .join(' ');
-  return { fixture, host, act, all, text };
-}
-
-type Item = { name: string };
-const items = (...names: string[]): Item[] => names.map((name) => ({ name }));
-
-beforeEach(() => {
-  created.length = 0;
-  destroyed.length = 0;
-});
+beforeEach(() => resetTracking());
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -181,9 +78,18 @@ describe('component stability', () => {
     expect(build).toHaveBeenCalledTimes(1);
   });
 
-  // KNOWN ISSUE: layout() is one computed; any signal it reads rebuilds every node, so every
-  // component is recreated. Flip to `it` once nodes are reused across layout recomputes.
-  it.fails('does not recreate unrelated controls when a layout branch toggles', async () => {
+});
+
+// ── Layout re-run warning ─────────────────────────────────────────────────
+
+// A layout function that reads a signal re-runs when it changes and builds new nodes, so every
+// component it renders is recreated. That's by design (no node reuse); the renderer warns in dev.
+describe('layout re-run warning', () => {
+  const RERUN = 'The layout function re-ran';
+  const ITEM_RERUN = 'item layout function re-ran';
+
+  it('recreates every control and warns when a layout branch toggles', async () => {
+    const { count } = spyWarn();
     const showExtra = signal(false);
     const { act, all } = await renderForm({ name: 'Ada', extra: 'x' }, (f) => [
       control(f.name, { component: TrackedControl }),
@@ -193,12 +99,12 @@ describe('component stability', () => {
 
     await act(() => showExtra.set(true));
 
-    expect(all(TrackedControl)[0]).toBe(name);
+    expect(all(TrackedControl)[0]).not.toBe(name);
+    expect(count(RERUN)).toBe(1);
   });
 
-  // KNOWN ISSUE (same cause): typing in a field the layout reads recreates that very input,
-  // so it loses focus on every keystroke.
-  it.fails('does not recreate a control whose own value drives a layout branch', async () => {
+  it('recreates the control whose own value drives a layout branch, and warns', async () => {
+    const { count } = spyWarn();
     const { host, act, all } = await renderForm({ country: 'US', state: '' }, (f) => [
       control(f.country, { component: TrackedControl }),
       ...(f.country().value() === 'US' ? [control(f.state, { component: TrackedControl })] : []),
@@ -207,26 +113,91 @@ describe('component stability', () => {
 
     await act(() => host.model.update((m) => ({ ...m, country: 'USA' })));
 
-    expect(all(TrackedControl)[0]).toBe(country);
+    expect(all(TrackedControl)[0]).not.toBe(country);
+    expect(count(RERUN)).toBe(1);
   });
 
-  it('does not recreate anything when the same condition is expressed as a node-level hidden', async () => {
-    const { host, act, all } = await renderForm({ country: 'US', state: '' }, (f) => [
-      control(f.country, { component: TrackedControl }),
-      control(f.state, {
-        component: TrackedControl,
-        hidden: computed(() => f.country().value() !== 'US'),
-      }),
+  it('does not warn on the first render', async () => {
+    const { count } = spyWarn();
+    await renderForm({ name: 'Ada' }, (f) => [control(f.name, { component: TrackedControl })]);
+    expect(count(RERUN)).toBe(0);
+  });
+
+  it('does not warn when a different layout is passed to <sfr-form>', async () => {
+    const { count } = spyWarn();
+    const { swapLayout } = await renderForm({ a: 'x', b: 'y' }, (f) => [
+      control(f.a, { component: TrackedControl }),
     ]);
-    const [country] = all(TrackedControl);
 
-    await act(() => host.model.update((m) => ({ ...m, country: 'USA' })));
-    expect(all(TrackedControl)).toEqual([country]);
+    await swapLayout((f) => [control(f.b, { component: TrackedControl })]);
 
-    await act(() => host.model.update((m) => ({ ...m, country: 'US' })));
-    expect(all(TrackedControl)[0]).toBe(country);
-    // Only the conditional control is recreated when it reappears.
-    expect(created).toHaveLength(3);
+    expect(count(RERUN)).toBe(0);
+  });
+
+  it('does not warn when values change without re-running the layout', async () => {
+    const { count } = spyWarn();
+    const { host, act } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl }),
+    ]);
+
+    await act(() => host.f.name().value.set('Grace'));
+
+    expect(count(RERUN)).toBe(0);
+  });
+
+  it('warns once per layout, not on every re-run', async () => {
+    const { count } = spyWarn();
+    const flag = signal(false);
+    const { act } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl, bindings: flag() ? [] : [] }),
+    ]);
+
+    for (let i = 0; i < 3; i++) await act(() => flag.update((v) => !v));
+
+    expect(count(RERUN)).toBe(1);
+  });
+
+  it('logs the form element and says the warning is shown once', async () => {
+    const { warn } = spyWarn();
+    const flag = signal(false);
+    const { fixture, act } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl, bindings: flag() ? [] : [] }),
+    ]);
+
+    await act(() => flag.set(true));
+
+    const [message, element] = warn.mock.calls[0];
+    expect(message).toContain('untracked(');
+    expect(message).toContain('Shown once per layout function');
+    expect(element).toBe(fixture.nativeElement.querySelector('sfr-form'));
+  });
+
+  it('warns when an item layout function re-runs, logging the array element', async () => {
+    const { warn, count } = spyWarn();
+    const compact = signal(false);
+    const { fixture, act } = await renderForm({ items: items('a', 'b') }, (f) => [
+      array(f.items, (item) =>
+        control(item.name, { component: TrackedControl, bindings: compact() ? [] : [] }),
+      ),
+    ]);
+
+    await act(() => compact.set(true));
+
+    expect(count(ITEM_RERUN)).toBe(1);
+    expect(count(RERUN)).toBe(0);
+    expect(warn.mock.calls[0][1]).toBe(fixture.nativeElement.querySelector('sfr-form sfr-node'));
+  });
+
+  it('does not warn when items are added, removed or reordered', async () => {
+    const { count } = spyWarn();
+    const { host, act } = await renderForm({ items: items('a', 'b') }, (f) => [
+      array(f.items, (item) => control(item.name, { component: TrackedControl })),
+    ]);
+
+    await act(() => host.model.update((m) => ({ items: [...m.items, { name: 'c' }] })));
+    await act(() => host.model.update((m) => ({ items: [m.items[2], m.items[0]] })));
+
+    expect(count(ITEM_RERUN)).toBe(0);
   });
 });
 
@@ -251,12 +222,7 @@ describe.each([
   },
 ])('library-iterated array — $mode', ({ build }) => {
 
-  async function setup() {
-    const r = await renderForm({ items: items('a', 'b', 'c') }, build);
-    /** Rendered rows as creation-order ids (0 = first instance ever created), in DOM order. */
-    const ids = () => r.all(TrackedControl).map((row) => created.indexOf(row));
-    return { ...r, ids };
-  }
+  const setup = () => renderForm({ items: items('a', 'b', 'c') }, build);
 
   it('renders one row per item', async () => {
     const { text, ids } = await setup();
@@ -349,7 +315,7 @@ describe('visibility', () => {
     const { host, act, all } = await renderForm(
       { name: 'Ada', hide: false },
       (f) => [control(f.name, { component: TrackedControl })],
-      (p) => hidden(p.name, { when: ({ valueOf }) => valueOf(p.hide) }),
+      { schema: (p) => hidden(p.name, { when: ({ valueOf }) => valueOf(p.hide) }) },
     );
     expect(all(TrackedControl)).toHaveLength(1);
 
@@ -357,45 +323,23 @@ describe('visibility', () => {
     expect(all(TrackedControl)).toHaveLength(0);
   });
 
-  it("lets a layout-level hidden signal override the field's hidden()", async () => {
-    const { all } = await renderForm(
-      { name: 'Ada' },
-      (f) => [control(f.name, { component: TrackedControl, hidden: signal(false) })],
-      (p) => hidden(p.name, { when: () => true }),
-    );
-    expect(all(TrackedControl)).toHaveLength(1);
-  });
-
   it("hides a data-driven group when its field's hidden() is true", async () => {
     const { all } = await renderForm(
       { address: { street: 'Main' } },
       (f) => [group(f.address, (g) => ({ street: control(g.street, { component: TrackedControl }) }))],
-      (p) => hidden(p.address, { when: () => true }),
+      { schema: (p) => hidden(p.address, { when: () => true }) },
     );
     expect(all(TrackedControl)).toHaveLength(0);
   });
 
   it('renders no DOM at all for a hidden node', async () => {
-    const { fixture } = await renderForm({ name: 'Ada' }, (f) => [
-      control(f.name, { component: TrackedControl, hidden: signal(true) }),
-    ]);
+    const { fixture } = await renderForm(
+      { name: 'Ada' },
+      (f) => [control(f.name, { component: TrackedControl })],
+      { schema: (p) => hidden(p.name, { when: () => true }) },
+    );
     const node: HTMLElement = fixture.nativeElement.querySelector('sfr-node');
     expect(node.children).toHaveLength(0);
-  });
-
-  it('keeps array items (data lives in the form) across hide and show', async () => {
-    const show = signal(true);
-    const { host, act, text } = await renderForm({ items: items('a', 'b') }, (f) => [
-      array(f.items, { hidden: computed(() => !show()) }, (item) =>
-        control(item.name, { component: TrackedControl }),
-      ),
-    ]);
-
-    await act(() => show.set(false));
-    await act(() => host.model.update((m) => ({ items: [...m.items, { name: 'c' }] })));
-    await act(() => show.set(true));
-
-    expect(text()).toBe('a b c');
   });
 });
 
@@ -461,11 +405,368 @@ describe('node kinds', () => {
   });
 
   it('warns in dev mode when a control resolves no component', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { count } = spyWarn();
     await renderForm({ name: 'Ada' }, (f) => [control(f.name)]);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('No component resolved'),
-      expect.any(String),
+    expect(count('No component resolved for control node')).toBe(1);
+  });
+
+  it('names an unregistered control type in the warning', async () => {
+    const { count } = spyWarn();
+    await renderForm({ name: 'Ada' }, (f) => [control(f.name, { type: 'nope' })]);
+    expect(count("Type 'nope' is not registered")).toBe(1);
+  });
+});
+
+// ── Wrapper bindings ──────────────────────────────────────────────────────
+
+describe('wrapper bindings', () => {
+  // Reserved inputs are bound only when declared, so wrappers that don't need them don't throw
+  // "unknown input" (NG0315) in dev mode.
+  it('renders a group wrapper that declares no children input', async () => {
+    const { fixture } = await renderForm({ a: 'x' }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, { component: StaticWrapper }),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it('renders a library-iterated array wrapper that declares no children input', async () => {
+    const { fixture } = await renderForm({ items: items('a') }, (f) => [
+      array(f.items, { component: StaticWrapper }, (item) =>
+        control(item.name, { component: TrackedControl }),
+      ),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it('renders a static array wrapper that declares no children input', async () => {
+    const { fixture } = await renderForm({ a: 'x' }, (f) => [
+      array([control(f.a, { component: TrackedControl })], { component: StaticWrapper }),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it('renders a renderer-owned array component that declares no field input', async () => {
+    const { fixture } = await renderForm({ items: items('a') }, (f) => [
+      array(f.items, { component: StaticWrapper }),
+    ]);
+    expect(fixture.nativeElement.textContent).toContain('static');
+  });
+
+  it('attaches consumer host directives to a group wrapper', async () => {
+    const { fixture } = await renderForm({ a: 'x' }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, {
+        component: CardWrapper,
+        directives: [MarkerDirective],
+      }),
+    ]);
+    expect(fixture.nativeElement.querySelector('test-card').getAttribute('data-marker')).toBe('yes');
+  });
+
+  it('updates a reactive binding on a group wrapper in place, without recreating', async () => {
+    const title = signal('One');
+    const { all, expectStable } = await renderForm({ a: 'x' }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, {
+        component: CardWrapper,
+        bindings: [inputBinding('title', title)],
+      }),
+    ]);
+
+    await expectStable(() => title.set('Two'));
+
+    expect(all(CardWrapper)[0].title()).toBe('Two');
+  });
+  describe('field and state', () => {
+    it('passes them to a data-driven group wrapper, for section-level errors', async () => {
+      const { host, act, all, fixture } = await renderForm(
+        { address: { street: '' } },
+        (f) => [
+          group(f.address, { component: FieldWrapper }, (g) => ({
+            street: control(g.street, { component: TrackedControl }),
+          })),
+        ],
+        { schema: (p) => required(p.address.street) },
+      );
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.field()).toBe(host.f.address);
+      expect(wrapper.state()).toBe(host.f.address());
+      expect(fixture.nativeElement.textContent).toContain('errors:1');
+
+      await act(() => host.f.address.street().value.set('Main'));
+
+      expect(fixture.nativeElement.textContent).toContain('errors:0');
+      expect(all(FieldWrapper)).toEqual([wrapper]);
+    });
+
+    it('passes them to a library-iterated array wrapper, alongside children', async () => {
+      const { host, all } = await renderForm({ items: items('a', 'b') }, (f) => [
+        array(f.items, { component: FieldWrapper }, (item) => control(item.name, { component: TrackedControl })),
+      ]);
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.field()).toBe(host.f.items);
+      expect(wrapper.state()).toBe(host.f.items());
+      expect(wrapper.children()).toHaveLength(2);
+    });
+
+    it('lets an array wrapper tell the empty node apart from a single item', async () => {
+      const { all } = await renderForm({ items: [] as Item[] }, (f) => [
+        array(f.items, { component: FieldWrapper, empty: content(TextContent) }, (item) =>
+          control(item.name, { component: TrackedControl }),
+        ),
+      ]);
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.children()).toHaveLength(1);
+      expect(wrapper.state()!.value()).toEqual([]);
+    });
+
+    it('passes state to a renderer-owned array component', async () => {
+      const { host, all } = await renderForm({ items: items('a') }, (f) => [
+        array(f.items, { component: FieldWrapper }),
+      ]);
+      const [wrapper] = all(FieldWrapper);
+      expect(wrapper.field()).toBe(host.f.items);
+      expect(wrapper.state()).toBe(host.f.items());
+    });
+
+    it('passes neither to wrappers without a field (explicit groups, static arrays)', async () => {
+      const { all } = await renderForm({ a: 'x' }, (f) => [
+        group({ a: control(f.a, { component: TrackedControl }) }, { component: FieldWrapper }),
+        array([control(f.a, { component: TrackedControl })], { component: FieldWrapper }),
+      ]);
+      expect(all(FieldWrapper).map((w) => [w.field(), w.state()])).toEqual([
+        [undefined, undefined],
+        [undefined, undefined],
+      ]);
+    });
+  });
+});
+
+// ── Registry resolution ───────────────────────────────────────────────────
+
+describe('registry resolution', () => {
+  const providers = [
+    provideSignalFormsRenderer({ types: { text: TrackedControl, card: CardWrapper, list: ListWrapper } }),
+  ];
+
+  it('resolves a group wrapper by type', async () => {
+    const { all, text } = await renderForm(
+      { a: 'x' },
+      (f) => [group({ a: control(f.a, { type: 'text' }) }, { type: 'card' })],
+      { providers },
     );
+    expect(all(CardWrapper)).toHaveLength(1);
+    expect(text()).toBe('x');
+  });
+
+  it('resolves a library-iterated array wrapper by type', async () => {
+    const { all, text } = await renderForm(
+      { items: items('a', 'b') },
+      (f) => [array(f.items, { type: 'list' }, (item) => control(item.name, { type: 'text' }))],
+      { providers },
+    );
+    expect(all(ListWrapper)).toHaveLength(1);
+    expect(text()).toBe('a b');
+  });
+
+  it('falls back to rendering the children when a group type is not registered', async () => {
+    const { text } = await renderForm(
+      { a: 'x' },
+      (f) => [group({ a: control(f.a, { type: 'text' }) }, { type: 'unknown' })],
+      { providers },
+    );
+    expect(text()).toBe('x');
+  });
+
+  it('warns in dev mode when a group or array type is not registered', async () => {
+    const { warn, count } = spyWarn();
+    await renderForm(
+      { a: 'x', items: items('a') },
+      (f) => [
+        group({ a: control(f.a, { type: 'text' }) }, { type: 'unknown-card' }),
+        array(f.items, { type: 'unknown-list' }, (item) => control(item.name, { type: 'text' })),
+      ],
+      { providers },
+    );
+    expect(count("Type 'unknown-card' is not registered")).toBe(1);
+    expect(count("Type 'unknown-list' is not registered")).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not warn for a group or array without a type', async () => {
+    const { warn } = spyWarn();
+    await renderForm({ a: 'x', items: items('a') }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }),
+      array(f.items, (item) => control(item.name, { component: TrackedControl })),
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+// ── Layout swap & lifecycle ───────────────────────────────────────────────
+
+describe('layout swap and lifecycle', () => {
+  it('renders a new layout passed to <sfr-form> and destroys the old components', async () => {
+    const { swapLayout, all, text } = await renderForm({ a: 'x', b: 'y' }, (f) => [
+      control(f.a, { component: TrackedControl }),
+    ]);
+    const [old] = all(TrackedControl);
+
+    await swapLayout((f) => [control(f.b, { component: TrackedControl })]);
+
+    expect(text()).toBe('y');
+    expect(destroyed).toEqual([old]);
+  });
+
+  it('destroys every rendered component when <sfr-form> is destroyed', async () => {
+    const { fixture } = await renderForm({ a: 'x', items: items('a', 'b') }, (f) => [
+      group({ a: control(f.a, { component: TrackedControl }) }, { component: CardWrapper }),
+      array(f.items, { component: ListWrapper }, (item) =>
+        control(item.name, { component: TrackedControl }),
+      ),
+    ]);
+
+    fixture.destroy();
+
+    expect(created).toHaveLength(5);
+    expect(new Set(destroyed)).toEqual(new Set(created));
+  });
+
+  it('renders two <sfr-form>s over the same form in sync, without recreating either', async () => {
+    const { host, text, expectStable } = await renderForm(
+      { name: 'Ada' },
+      (f) => [control(f.name, { component: TrackedControl })],
+      { twice: true },
+    );
+    expect(text()).toBe('Ada Ada');
+
+    await expectStable(() => host.f.name().value.set('Grace'));
+
+    expect(text()).toBe('Grace Grace');
+  });
+
+  it('renders no box of its own (display: contents)', async () => {
+    const { fixture } = await renderForm({ name: 'Ada' }, (f) => [
+      control(f.name, { component: TrackedControl }),
+    ]);
+    const node: HTMLElement = fixture.nativeElement.querySelector('sfr-node');
+    expect(getComputedStyle(node).display).toBe('contents');
+  });
+});
+
+// ── Nesting ───────────────────────────────────────────────────────────────
+
+describe('nesting', () => {
+  type Section = { title: string; items: Item[] };
+  const sections = (...s: Section[]) => ({ sections: s });
+
+  const nested = (f: FieldTree<{ sections: Section[] }>) => [
+    array(f.sections, (section) =>
+      group(section, (s) => ({
+        items: array(s.items, (item) => control(item.name, { component: TrackedControl })),
+      })),
+    ),
+  ];
+
+  it('does not recreate inner rows when an inner item is edited', async () => {
+    const { host, text, expectStable } = await renderForm(
+      sections({ title: 'S1', items: items('a', 'b') }, { title: 'S2', items: items('c') }),
+      nested,
+    );
+
+    await expectStable(() => host.f.sections[1].items[0].name().value.set('C'));
+
+    expect(text()).toBe('a b C');
+  });
+
+  it('moves inner rows with their outer item when outer items are reordered', async () => {
+    const { host, act, ids, text } = await renderForm(
+      sections({ title: 'S1', items: items('a', 'b') }, { title: 'S2', items: items('c') }),
+      nested,
+    );
+
+    await act(() => host.model.update((m) => ({ sections: [m.sections[1], m.sections[0]] })));
+
+    expect(text()).toBe('c a b');
+    expect(ids()).toEqual([2, 0, 1]);
+    expect(destroyed).toHaveLength(0);
+  });
+
+  it('does not recreate other rows when an inner item is removed', async () => {
+    const { host, act, ids } = await renderForm(
+      sections({ title: 'S1', items: items('a', 'b') }, { title: 'S2', items: items('c') }),
+      nested,
+    );
+
+    await act(() =>
+      host.model.update((m) => ({
+        sections: [{ ...m.sections[0], items: m.sections[0].items.slice(1) }, m.sections[1]],
+      })),
+    );
+
+    expect(ids()).toEqual([1, 2]);
+    expect(destroyed).toHaveLength(1);
+  });
+
+  it('does not recreate an array inside a data-driven group when a sibling field changes', async () => {
+    const { host, expectStable } = await renderForm(
+      { order: { note: 'n', items: items('a', 'b') } },
+      (f) => [
+        group(f.order, (o) => ({
+          note: control(o.note, { component: TrackedControl }),
+          items: array(o.items, (item) => control(item.name, { component: TrackedControl })),
+        })),
+      ],
+    );
+
+    await expectStable(() => host.f.order.note().value.set('changed'));
+  });
+});
+
+// ── More array shapes ─────────────────────────────────────────────────────
+
+describe('array shapes', () => {
+  it("hides a library-iterated array when its field's hidden() is true", async () => {
+    const { host, act, all } = await renderForm(
+      { hide: false, items: items('a', 'b') },
+      (f) => [array(f.items, (item) => control(item.name, { component: TrackedControl }))],
+      { schema: (p) => hidden(p.items, { when: ({ valueOf }) => valueOf(p.hide) }) },
+    );
+    expect(all(TrackedControl)).toHaveLength(2);
+
+    await act(() => host.model.update((m) => ({ ...m, hide: true })));
+    expect(all(TrackedControl)).toHaveLength(0);
+  });
+
+  it("hides a renderer-owned array when its field's hidden() is true", async () => {
+    const { all } = await renderForm(
+      { items: items('a') },
+      (f) => [array(f.items, { component: OwnedList })],
+      { schema: (p) => hidden(p.items, { when: () => true }) },
+    );
+    expect(all(OwnedList)).toHaveLength(0);
+  });
+
+  it('syncs a checkbox control inside an array item', async () => {
+    const { host, act, all } = await renderForm(
+      { todos: [{ done: true }, { done: false }] },
+      (f) => [array(f.todos, (todo) => control(todo.done, { component: CheckboxControl }))],
+    );
+
+    await act(() => all(CheckboxControl)[1].checked.set(true));
+
+    expect(host.model().todos.map((t) => t.done)).toEqual([true, true]);
+  });
+
+  // Signal forms tracks array item identity only for object items; primitive items are keyed by
+  // index. Removing the first item therefore keeps the first rows and shifts the values up.
+  it('tracks primitive items by index', async () => {
+    const { host, act, ids, text } = await renderForm({ tags: ['a', 'b', 'c'] }, (f) => [
+      array(f.tags, (tag) => control(tag, { component: TrackedControl })),
+    ]);
+
+    await act(() => host.model.update((m) => ({ tags: m.tags.slice(1) })));
+
+    expect(text()).toBe('b c');
+    expect(ids()).toEqual([0, 1]);
+    expect(destroyed).toHaveLength(1);
   });
 });

@@ -1,6 +1,6 @@
-import { computed, inputBinding } from '@angular/core';
+import { inputBinding } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
-import { control, group, array, LayoutNode } from 'ngx-signal-forms-renderer';
+import { control, group, array, when, LayoutNode } from 'ngx-signal-forms-renderer';
 import { CardGroupComponent } from '../components/card-group.component';
 import { SortableListComponent } from '../components/sortable-list.component';
 import { ProductPickerComponent } from '../components/product-picker.component';
@@ -58,12 +58,11 @@ function sectionGroup(node: SectionConfig, f: FieldTree<CheckoutModel>): LayoutN
       (g) => fieldsRecord(node.fields, g),
     );
   }
-  const hidden = node.when ? computed(() => !matches(node.when!, f().value())) : undefined;
-  return group(fieldsRecord(node.fields, f), {
-    component: CardGroupComponent,
-    bindings: [titleBinding],
-    hidden,
-  });
+  const section = () =>
+    group(fieldsRecord(node.fields, f), { component: CardGroupComponent, bindings: [titleBinding] });
+  // A section that follows a field's visibility renders through when(field): built when the field
+  // becomes visible, removed when the schema hides it.
+  return node.whenVisible ? when(child(f, node.whenVisible), section) : section();
 }
 
 function fieldsRecord(fields: FieldConfig[], node: FieldTree<unknown>): Record<string, LayoutNode> {
@@ -96,15 +95,4 @@ function lineItemLayout(item: FieldTree<LineItem>): LayoutNode {
 /** Index a field tree node by string key (the schema is dynamic, so keys aren't statically known). */
 function child(node: FieldTree<unknown>, key: string): FieldTree<unknown> {
   return (node as unknown as Record<string, FieldTree<unknown>>)[key];
-}
-
-/** Tiny predicate evaluator for section `when` strings: 'field=value', '!field', or 'field'. */
-function matches(expr: string, value: CheckoutModel): boolean {
-  const v = value as unknown as Record<string, unknown>;
-  if (expr.includes('=')) {
-    const [key, expected] = expr.split('=');
-    return String(v[key]) === expected;
-  }
-  if (expr.startsWith('!')) return !v[expr.slice(1)];
-  return !!v[expr];
 }

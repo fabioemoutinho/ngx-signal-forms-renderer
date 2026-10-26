@@ -4,6 +4,7 @@ import {
   computed,
   DirectiveWithBindings,
   effect,
+  ElementRef,
   forwardRef,
   inject,
   input,
@@ -13,9 +14,10 @@ import {
   Type,
 } from '@angular/core';
 import { FieldTree, FormField } from '@angular/forms/signals';
-import { LayoutNode } from './layout-types';
+import { LayoutBranch, LayoutNode, SwitchCaseNode, WhenNode } from './layout-types';
 import { SIGNAL_FORMS_RENDERER_TYPE_REGISTRY } from './provider';
 import { SfrComponentOutletDirective } from './sfr-component-outlet.directive';
+import { LAYOUT_RERUN_ADVICE, warnOnce } from './dev-warnings';
 
 /**
  * Recursive layout node renderer. Receives a LayoutNode and renders the resolved
@@ -50,20 +52,22 @@ export class SfrNodeComponent {
   readonly node = input.required<LayoutNode>();
 
   private readonly registry = inject(SIGNAL_FORMS_RENDERER_TYPE_REGISTRY);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly isHidden = computed(() => {
     const node = this.node();
-    // A custom layout-level hidden signal always wins.
-    if (node.hidden) return node.hidden();
-    // Otherwise defer to the related field's native hidden() (signal forms schema rule):
-    // always present for controls, optional for groups/arrays that map to a field.
+    if (isConditional(node) || node.kind === 'content') return false;
+    // Defer to the related field's native hidden() (signal forms schema rule): always present
+    // for controls, optional for groups/arrays that map to a field.
     return node.field?.().hidden() ?? false;
   });
 
   /** Resolved component type (explicit `component`, else `type` via the registry), or null for fallback rendering. */
-  protected readonly resolvedComponent = computed(
-    (): Type<unknown> | null => this.node().component ?? this.registry[this.node().type!] ?? null,
-  );
+  protected readonly resolvedComponent = computed((): Type<unknown> | null => {
+    const node = this.node();
+    if (isConditional(node)) return null;
+    return node.component ?? this.registry[node.type!] ?? null;
+  });
 
   /**
    * Public inputs of the resolved component and whether it is a form control `FormField` can
@@ -91,6 +95,7 @@ export class SfrNodeComponent {
   protected readonly directives = computed(
     (): (Type<unknown> | DirectiveWithBindings<unknown>)[] | undefined => {
       const node = this.node();
+      if (isConditional(node)) return undefined;
       const result: (Type<unknown> | DirectiveWithBindings<unknown>)[] = [];
       if (node.kind === 'control' && this.componentIo()?.isFormControl) {
         const field = node.field;
@@ -105,42 +110,52 @@ export class SfrNodeComponent {
    * Reactive input bindings for the resolved component: the renderer's reserved bindings by
    * node kind, followed by any consumer-provided `node.bindings` (additive — they must not
    * re-bind the reserved inputs):
-   * - control: `field` + `state`, each only if the component declares it (value etc. of a
-   *   FormValueControl/FormCheckboxControl come from the FormField directive, not bindings)
-   * - group: `children` (the keyed record)
+   * - control: `field` + `state` (value etc. of a FormValueControl/FormCheckboxControl come
+   *   from the FormField directive, not bindings)
+   * - group: `children` (the keyed record); data-driven groups also `field` + `state`
    * - array (static ordered nodes): `children` (the node's LayoutNode[])
-   * - array (renderer-owned, no itemLayout): `field`
-   * - array (library-iterated): `children` (the per-item LayoutNodes)
+   * - array (renderer-owned, no itemLayout): `field` + `state`
+   * - array (library-iterated): `children` (the per-item LayoutNodes, or `[empty]` while there
+   *   are no items) + `field` + `state`
+   * - content: none — only the consumer's bindings
+   *
+   * Each reserved input is bound only if the component declares it, so any component can opt
+   * out of any of them without a "binding to unknown input" error.
    */
   protected readonly bindings = computed((): Binding[] => {
     const node = this.node();
+    if (isConditional(node)) return [];
     const io = this.componentIo();
-    const extra = node.bindings ?? [];
+    const reserved: Binding[] = [];
+    const bind = (name: string, value: () => unknown) => {
+      if (!io || io.inputs.has(name)) reserved.push(inputBinding(name, value));
+    };
 
-    if (node.kind === 'control') {
-      const { field } = node;
-      // Bind `field`/`state` only if the control actually declares them, so a control can opt
-      // out of either (or both) without a "binding to unknown input" error.
-      const reserved: Binding[] = [];
-      if (!io || io.inputs.has('field')) reserved.push(inputBinding('field', () => field));
-      if (!io || io.inputs.has('state')) reserved.push(inputBinding('state', () => field()));
-      return [...reserved, ...extra];
+    const bindField = <T,>(field: FieldTree<T> | undefined) => {
+      if (!field) return;
+      bind('field', () => field);
+      bind('state', () => field());
+    };
+
+    switch (node.kind) {
+      case 'control':
+        bindField(node.field);
+        break;
+      case 'group': {
+        const { children } = node;
+        bind('children', () => children);
+        bindField(node.field);
+        break;
+      }
+      case 'array': {
+        const { field, itemLayout, children } = node;
+        if (field && itemLayout) bind('children', this.arrayItems);
+        else if (!field) bind('children', () => children ?? []);
+        bindField(field);
+        break;
+      }
     }
-    if (node.kind === 'group') {
-      const { children } = node;
-      return [inputBinding('children', () => children), ...extra];
-    }
-    // array — library-iterated (field + itemLayout)
-    if (node.field && node.itemLayout) {
-      return [inputBinding('children', this.arrayItems), ...extra];
-    }
-    // array — renderer-owned field (no itemLayout)
-    if (node.field) {
-      const { field } = node;
-      return [inputBinding('field', () => field), ...extra];
-    }
-    // array — static ordered nodes
-    return [inputBinding('children', () => node.children ?? []), ...extra];
+    return [...reserved, ...(node.bindings ?? [])];
   });
 
   // Caches one computed per item field, keyed by the field's identity. Signal forms
@@ -148,41 +163,118 @@ export class SfrNodeComponent {
   // remove, reorder — swap identities), so the same item always yields the same
   // LayoutNode reference. That lets `@for (track node)` reuse components when the user
   // types, instead of recreating them and losing focus. WeakMap, so dropped items are GC'd.
-  private readonly _itemComputeds = new WeakMap<object, Signal<LayoutNode>>();
+  // `last` remembers the item's previous node, to warn when its itemLayout re-runs.
+  private readonly _items = new WeakMap<object, { layout: Signal<LayoutNode>; last?: LayoutNode }>();
 
   private readonly arrayItems = computed((): LayoutNode[] => {
     const node = this.node();
     if (node.kind !== 'array' || !node.field || !node.itemLayout) return [];
-    const { field, itemLayout } = node;
-    return Array.from(field, (itemField) => {
+    const { field, itemLayout, empty } = node;
+    const itemNodes = Array.from(field, (itemField) => {
       const key = itemField as object;
-      let item = this._itemComputeds.get(key);
+      let item = this._items.get(key);
       if (!item) {
-        item = computed(() => itemLayout(itemField as FieldTree<any>));
-        this._itemComputeds.set(key, item);
+        item = { layout: computed(() => itemLayout(itemField as FieldTree<any>)) };
+        this._items.set(key, item);
       }
-      return item();
+      const itemNode = item.layout();
+      if (item.last && item.last !== itemNode) {
+        warnOnce(
+          itemLayout,
+          "An array's item layout function re-ran (it reads a signal), so that item's components " +
+            `were recreated (inputs lose focus and local state). ${LAYOUT_RERUN_ADVICE}\nArray:`,
+          this.host.nativeElement,
+        );
+      }
+      item.last = itemNode;
+      return itemNode;
     });
+    // The same `empty` node each time, so it isn't recreated while the array stays empty.
+    return itemNodes.length === 0 && empty ? [empty] : itemNodes;
   });
 
-  /** Children to render when no wrapper component is resolved (groups/arrays only). */
+  /**
+   * The active branch of a `when`/`switchCase` node. Compared by identity, so `branchNodes`
+   * re-runs only when a different branch becomes active, not whenever the condition or key is
+   * re-evaluated.
+   */
+  private readonly activeBranch = computed((): LayoutBranch | undefined => {
+    const node = this.node();
+    if (node.kind === 'when') return node.condition() ? node.nodes : node.else;
+    if (node.kind === 'switchCase') {
+      const key = node.key();
+      const name = key == null ? undefined : String(key);
+      return name !== undefined && Object.hasOwn(node.cases, name) ? node.cases[name] : node.default;
+    }
+    return undefined;
+  });
+
+  // The branch last built and what it returned, to warn when a branch re-runs without a flip.
+  #lastBranch?: { branch: LayoutBranch; built: LayoutNode | LayoutNode[] };
+
+  /** The active branch's nodes, built when the branch becomes active. */
+  private readonly branchNodes = computed((): LayoutNode[] => {
+    const branch = this.activeBranch();
+    if (!branch) {
+      this.#lastBranch = undefined;
+      return [];
+    }
+    const built = branch();
+    if (this.#lastBranch?.branch === branch && this.#lastBranch.built !== built) {
+      warnOnce(
+        branch,
+        `A ${this.node().kind}() branch re-ran (it reads a signal) while the same branch stayed ` +
+          'active, so its components were recreated (inputs lose focus and local state). Read ' +
+          'values inside binding closures (inputBinding(name, () => …)), or wrap an accidental ' +
+          'read in untracked(() => …). Shown once per branch function; later re-runs are not ' +
+          `logged.\n${this.node().kind}():`,
+        this.host.nativeElement,
+      );
+    }
+    this.#lastBranch = { branch, built };
+    return Array.isArray(built) ? built : [built];
+  });
+
+  /**
+   * Children to render when no wrapper component is resolved: a group's or array's children, or
+   * a `when`/`switchCase` node's active branch.
+   */
   protected readonly children = computed((): LayoutNode[] => {
     const node = this.node();
+    if (isConditional(node)) return this.branchNodes();
     if (node.kind === 'group') return Object.values(node.children);
     if (node.kind === 'array') return node.itemLayout ? this.arrayItems() : (node.children ?? []);
     return [];
   });
 
-  /** Dev-mode warning when a control node has no component resolved. */
-  readonly #warnMissingControl = effect(() => {
-    if (this.node().kind === 'control' && !this.resolvedComponent()) {
-      if (typeof ngDevMode === 'undefined' || ngDevMode) {
-        console.warn(
-          `[ngx-signal-forms-renderer] No component resolved for control node.`,
-          `Provide a 'component' or 'type' in the control() call, or register a type in provideSignalFormsRenderer().`,
-        );
-      }
+  /**
+   * Dev-mode warning when a node's component doesn't resolve: a control or content node renders
+   * nothing, and a group or array with an unregistered `type` renders its children without a
+   * wrapper.
+   */
+  readonly #warnUnresolved = effect(() => {
+    const node = this.node();
+    if (isConditional(node) || this.resolvedComponent()) return;
+    const { kind, type } = node;
+    const unregistered = type ? ` Type '${type}' is not registered.` : '';
+    if (kind === 'control' || kind === 'content') {
+      warnOnce(
+        node,
+        `No component resolved for ${kind} node, so it renders nothing.${unregistered} Provide a ` +
+          `'component' or 'type' in the ${kind}() call, or register the type in ` +
+          'provideSignalFormsRenderer().',
+      );
+    } else if (type) {
+      warnOnce(
+        node,
+        `No component resolved for ${kind} node, so its children render without a wrapper.` +
+          `${unregistered} Register it in provideSignalFormsRenderer().`,
+      );
     }
   });
 }
 
+/** `when`/`switchCase` nodes: they render their active branch, with no component, bindings or field. */
+function isConditional(node: LayoutNode): node is WhenNode | SwitchCaseNode {
+  return node.kind === 'when' || node.kind === 'switchCase';
+}

@@ -122,6 +122,10 @@ component you write gets the real `FieldTree`, so it keeps full access to signal
 - **`group`** — a keyed collection of nodes (`Record<string, LayoutNode>`), optionally wrapped in a
   component. Can be data-driven from a sub-object field.
 - **`array`** — a list of nodes: static, renderer-owned, or library-iterated from an array field.
+- **`content`** — a component that isn't bound to a field: a heading, help text, an alert,
+  form-level errors, a derived value.
+- **`when`** / **`switchCase`** — conditional layout (the layout's `@if` / `@switch`). They render
+  the active branch's nodes and no element of their own.
 
 ### Component resolution (two-tier)
 
@@ -160,10 +164,12 @@ or the `FormField` directive for `FormValueControl`/`FormCheckboxControl` compon
 
 ### Visibility
 
-- A node that maps to a **field** (any control, or a data-driven group/array) defers to that field's
-  native signal-forms `hidden()`.
-- A **layout-level `hidden`** signal (on any node) takes precedence — use it for elements that don't
-  map to a field, or to override.
+- **Conditional fields** — use signal forms' `hidden()` in the schema. A node that maps to a field
+  (any control, or a data-driven group/array) defers to it automatically, and a hidden field is also
+  excluded from validation.
+- **Conditional layout** — use `when()` / `switchCase()` for structure that doesn't map to a single
+  field (a card around several fields, a sub-form per plan). `when(field, …)` renders while that
+  field is visible, so a condition that affects validity is written once, in the schema.
 
 ```typescript
 // In the signal forms schema (semantic — also excluded from validation)
@@ -171,14 +177,20 @@ const userForm = form(model, (f) => {
   hidden(f.bio, { when: ({ valueOf }) => valueOf(f.role) !== 'admin' });
 });
 
-// Layout-level override
-group({ /* ... */ }, { hidden: computed(() => userForm.role().value() !== 'admin') });
+// In the layout: the card renders while the bio field is visible
+when(f.bio, () => group({ bio: control(f.bio) }, { type: 'card' }));
 ```
+
+Fields inside an inactive `when`/`switchCase` branch still validate, since a branch is layout only.
+Pair the branch with `hidden()` / `applyWhenValue()` in the schema when its fields shouldn't.
+
+See [RECIPES.md](./RECIPES.md) for which tool fits which case, wizard steps, and a sub-form per type.
 
 ## API Reference
 
-You build layouts with the functions below — you don't construct node objects by hand. Every builder
-accepts the same **options** object:
+You build layouts with the functions below — you don't construct node objects by hand. `control`,
+`group` and `array` accept the same **options** object (`content` takes only `bindings` and
+`directives`; `when` and `switchCase` take none):
 
 | Option       | Type                                                | Purpose                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------- |
@@ -186,7 +198,6 @@ accepts the same **options** object:
 | `type`       | `string`                                            | Component registered via `provideSignalFormsRenderer`. |
 | `bindings`   | `Binding[]`                                          | Inputs/outputs (`inputBinding`/`outputBinding`/`twoWayBinding`). |
 | `directives` | `(Type<unknown> \| DirectiveWithBindings<unknown>)[]` | Host directives to attach.                            |
-| `hidden`     | `Signal<boolean>`                                   | Layout-level visibility override.                     |
 
 The builders return `LayoutNode`s — the only type you'll reference directly, as the `children` input
 on custom group/array wrapper components.
@@ -248,6 +259,13 @@ wrapper component as its `children`. Use when the list needs UI around each item
 array(f.items, { component: SortableList }, (item) => group(item, (g) => ({ name: control(g.name) })));
 ```
 
+Library-iterated arrays (with or without a wrapper) also take an **`empty`** node, rendered as the only
+child while the array has no items — the layout's `@empty`:
+
+```typescript
+array(f.items, { empty: content('hint', { bindings: [inputBinding('text', () => 'No items yet')] }) }, itemLayout);
+```
+
 **Renderer-owned** — the component receives the array `field` itself and does its own iteration and
 mutation. Use when you want full control over how the array renders and changes.
 
@@ -255,9 +273,49 @@ mutation. Use when you want full control over how the array renders and changes.
 array(f.items, { component: ItemsListComponent });
 ```
 
+#### `content(typeOrComponent, { bindings?, directives? })`
+
+A component that isn't bound to a field. Pass a component or a registered type. It receives only the
+`bindings` you give it — the renderer binds none of its own inputs. Read form state inside a binding
+to show derived values or form-level errors; the component updates in place.
+
+```typescript
+content('heading', { bindings: [inputBinding('text', () => 'Billing')] });
+content(FormErrors, { bindings: [inputBinding('errors', () => userForm().errorSummary())] });
+```
+
+#### `when(condition, () => nodes, () => elseNodes?)`
+
+Renders the first branch while `condition` is true, else the optional second branch. `condition` is a
+signal or function returning a boolean, or a field (renders while the field is visible). Branches are
+functions returning a node or an array of nodes. A branch is built when it becomes active and rebuilt
+only when the condition flips, so changing the values the condition reads keeps its components.
+
+```typescript
+when(isBusiness, () => [control(f.company), control(f.vatId)]);
+when(() => f.country().value() === 'US', () => control(f.state), () => control(f.region));
+when(f.company, () => group({ company: control(f.company) }, { type: 'card' }));
+```
+
+#### `switchCase(key, cases, { default? })`
+
+Renders the case whose name equals `String(key)`, else `default` (also for a `null`/`undefined` key).
+`key` is a function or a field; case names are typed against its values. A case is rebuilt only when
+the matched case changes.
+
+```typescript
+switchCase(f.plan, {
+  business: () => [control(f.company), control(f.vatId)],
+  personal: () => control(f.birthDate),
+}, { default: () => [] });
+```
+
 #### `layout(form, fn)`
 
-Returns a `Signal<LayoutNode[]>`. Reading signals inside `fn` makes the layout reactive.
+Returns a `Signal<LayoutNode[]>`. If `fn` reads a signal, it re-runs when that signal changes and
+recreates every component it renders (a dev-mode warning says so). That suits structure that changes
+rarely, like fields decided by loaded config; for conditions that change while the user fills the
+form, use `when()` / `switchCase()` or the schema's `hidden()`.
 
 ```typescript
 const myLayout = layout(userForm, (f) => [
@@ -273,6 +331,24 @@ provideSignalFormsRenderer({
   types: { text: TextInputComponent, select: SelectInputComponent, card: CardGroupComponent },
 });
 ```
+
+Registrations merge. Several calls in the same injector add up (a feature library can ship its own
+`provideSignalFormsRenderer` next to the app's), and a route's or component's registry extends its
+parent's — add or override types for one part of the app without repeating the rest. Where both
+define a key, the child's wins. It works in `ApplicationConfig.providers`, route `providers` and
+component `providers`:
+
+```typescript
+@Component({
+  providers: [provideSignalFormsRenderer({ types: { card: CompactCardComponent } })],
+  template: `<sfr-form [layout]="layout" />`, // `card` is compact here; other types come from the app
+})
+export class SidebarFormComponent {}
+```
+
+Registering the same key twice in one injector logs a dev-mode warning (the last one wins). A node whose
+`type` isn't registered also warns: controls and content render nothing, groups and arrays render
+their children without a wrapper.
 
 ### Components
 
@@ -371,6 +447,17 @@ export class StepperComponent {
 }
 ```
 
+Wrappers of a data-driven group or an array field also receive `field` (the `FieldTree`) and `state`
+(its `FieldState`) if they declare them — for section-level errors, pending state, or telling an array's
+`empty` node apart from a single item. Like every reserved input, they're bound only when declared.
+
+```typescript
+export class SectionCardComponent {
+  readonly children = input.required<Record<string, LayoutNode>>();
+  readonly state = input<FieldState<unknown>>();   // e.g. state()?.errorSummary()
+}
+```
+
 ## Layout composability
 
 Layouts are plain functions returning `LayoutNode[]`, so composition is just TypeScript.
@@ -392,6 +479,18 @@ const orderLayout = layout(orderForm, (f) => [
 Because the layout is just data + functions, you can also build it from your own schema/config — the
 [demo](https://fabioemoutinho.github.io/ngx-signal-forms-renderer) renders a whole checkout form from a
 plain-data schema mapped onto these builders.
+
+## Recipes
+
+[RECIPES.md](./RECIPES.md) covers common tasks, each backed by a test:
+
+- showing and hiding: which tool fits which case, and wizard steps
+- a sub-form per type (`switchCase` + `applyWhenValue`)
+- clearing a dependent value when the user changes another
+- array item actions: add, remove, move
+- form-level errors
+- submitting with `<form [formRoot]>`, and focusing the first invalid field
+- a file control
 
 ## License
 

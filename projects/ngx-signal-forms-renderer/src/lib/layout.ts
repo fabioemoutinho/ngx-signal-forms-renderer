@@ -1,6 +1,16 @@
-import { computed, Signal } from '@angular/core';
-import { FieldTree } from '@angular/forms/signals';
-import { ArrayNode, ControlNode, GroupNode, LayoutNode, LayoutNodeOptions } from './layout-types';
+import { computed, Signal, Type } from '@angular/core';
+import { FieldTree, isFieldTree } from '@angular/forms/signals';
+import {
+  ArrayNode,
+  ContentNode,
+  ControlNode,
+  GroupNode,
+  LayoutBranch,
+  LayoutNode,
+  LayoutNodeOptions,
+  SwitchCaseNode,
+  WhenNode,
+} from './layout-types';
 
 // ── control() ──────────────────────────────────────────────────────────────
 
@@ -20,6 +30,32 @@ export function control<T>(field: FieldTree<T>, options?: LayoutNodeOptions): Co
 
 /** Options for group() and array() builders. */
 export type ContainerOptions = LayoutNodeOptions;
+
+/** Options for a library-iterated array(): container options plus an `empty` node. */
+export interface ArrayOptions extends ContainerOptions {
+  /** Rendered (as the only child) while the array has no items — the layout's `@empty`. */
+  empty?: LayoutNode;
+}
+
+// ── content() ──────────────────────────────────────────────────────────────
+
+/**
+ * Creates a ContentNode: a component that isn't bound to a field (a heading, help text, an
+ * alert, form-level errors, a derived value). Pass a component or a type registered via
+ * `provideSignalFormsRenderer()`. It receives only the given `bindings`.
+ *
+ * @example
+ * content('heading', { bindings: [inputBinding('text', () => 'Billing')] })
+ * content(FormErrors, { bindings: [inputBinding('errors', () => userForm().errorSummary())] })
+ */
+export function content(
+  typeOrComponent: string | Type<unknown>,
+  options?: Pick<LayoutNodeOptions, 'bindings' | 'directives'>,
+): ContentNode {
+  const resolution =
+    typeof typeOrComponent === 'string' ? { type: typeOrComponent } : { component: typeOrComponent };
+  return { kind: 'content', ...options, ...resolution };
+}
 
 // ── group() ────────────────────────────────────────────────────────────────
 
@@ -83,14 +119,17 @@ export function group<T>(
  *
  * // Library iterates — per-item fn + wrapper component that receives children
  * array(f.items, { component: SortableList, bindings: [outputBinding('moved', onMove)] }, (item) => group(item, ...))
+ *
+ * // Library iterates — with a node rendered while there are no items
+ * array(f.items, { empty: content('hint', { bindings: [inputBinding('text', () => 'No items yet')] }) }, (item) => ...)
  */
 export function array(children: LayoutNode[], options?: ContainerOptions): ArrayNode;
 export function array<T>(field: FieldTree<T[]>, options?: ContainerOptions): ArrayNode;
 export function array<T>(field: FieldTree<T[]>, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
-export function array<T>(field: FieldTree<T[]>, options: ContainerOptions, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
+export function array<T>(field: FieldTree<T[]>, options: ArrayOptions, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
 export function array<T>(
   fieldOrChildren: FieldTree<T[]> | LayoutNode[],
-  optionsOrFn?: ContainerOptions | ((item: FieldTree<T>) => LayoutNode),
+  optionsOrFn?: ArrayOptions | ((item: FieldTree<T>) => LayoutNode),
   maybeFn?: (item: FieldTree<T>) => LayoutNode,
 ): ArrayNode {
   if (Array.isArray(fieldOrChildren)) {
@@ -108,15 +147,98 @@ export function array<T>(
   return { kind: 'array', ...(optionsOrFn ?? {}), field: fieldOrChildren };
 }
 
+// ── when() ─────────────────────────────────────────────────────────────────
+
+/**
+ * Conditional layout (the layout's `@if`): renders the `nodes` branch while `condition` is true, else the
+ * `elseNodes` branch (or nothing). Renders no element of its own.
+ *
+ * `condition` is a signal or function returning a boolean, or a field: `when(f.company, …)`
+ * renders while that field is visible (its schema `hidden()` is false), so the schema stays the
+ * single source of truth for conditions that affect validity.
+ *
+ * Branches are builder functions, called only when they become active. A branch is rebuilt (its
+ * components recreated) only when the condition flips, not when the values it reads change
+ * without flipping it. A branch is layout only: fields inside an inactive branch still validate,
+ * so pair it with the schema's `hidden()`/`applyWhen()` when they should not.
+ *
+ * @example
+ * when(isBusiness, () => [control(f.company), control(f.vatId)])
+ * when(() => f.country().value() === 'US', () => control(f.state), () => control(f.region))
+ * when(f.company, () => group({ company: control(f.company) }, { component: CardComponent }))
+ */
+export function when<T>(
+  condition: (() => boolean) | FieldTree<T>,
+  nodes: LayoutBranch,
+  elseNodes?: LayoutBranch,
+): WhenNode {
+  const field = isFieldTree(condition) ? condition : undefined;
+  return {
+    kind: 'when',
+    condition: field ? () => !field().hidden() : (condition as () => boolean),
+    nodes,
+    ...(elseNodes && { else: elseNodes }),
+  };
+}
+
+// ── switchCase() ───────────────────────────────────────────────────────────
+
+/** Case names for a `switchCase()` key: each value as a string, as matched via `String(key)`. */
+export type SwitchCaseKey<K> = K extends string | number | boolean | bigint ? `${K}` : never;
+
+/**
+ * Multi-branch layout (the layout's `@switch`): renders the case whose name equals
+ * `String(key)`, else the `default` branch (or nothing). A `null`/`undefined` key renders
+ * `default`. Renders no element of its own.
+ *
+ * `key` is a function, or a field whose value is the key. Case names are typed against the key's
+ * values. Cases are builder functions, built only when they become active; a case is rebuilt only
+ * when the matched case changes. Like `when()`, this is layout only: pair it with the schema's
+ * `applyWhenValue()`/`hidden()` so fields of inactive cases don't validate.
+ *
+ * @example
+ * switchCase(f.plan, {
+ *   business: () => [control(f.company), control(f.vatId)],
+ *   personal: () => control(f.birthDate),
+ * }, { default: () => [] })
+ */
+export function switchCase<F extends () => { value: () => unknown }>(
+  key: F,
+  cases: Partial<Record<SwitchCaseKey<ReturnType<ReturnType<F>['value']>>, LayoutBranch>>,
+  options?: { default?: LayoutBranch },
+): SwitchCaseNode;
+export function switchCase<K extends string | number | boolean | bigint | null | undefined>(
+  key: () => K,
+  cases: Partial<Record<SwitchCaseKey<K>, LayoutBranch>>,
+  options?: { default?: LayoutBranch },
+): SwitchCaseNode;
+export function switchCase(
+  key: (() => unknown) | FieldTree<unknown>,
+  cases: Partial<Record<string, LayoutBranch>>,
+  options?: { default?: LayoutBranch },
+): SwitchCaseNode {
+  const field = isFieldTree(key) ? key : undefined;
+  return {
+    kind: 'switchCase',
+    key: field ? () => field().value() : (key as () => unknown),
+    cases: cases as Record<string, LayoutBranch>,
+    ...(options?.default && { default: options.default }),
+  };
+}
+
 // ── layout() ───────────────────────────────────────────────────────────────
 
 /**
  * Creates a reactive layout for a form. `fn` receives the form's FieldTree<T> for
  * type-safe path access (e.g. `f.name`, `f.items`).
  *
- * Returns a `computed` Signal<LayoutNode[]>, re-evaluated by `<sfr-form>` when its
- * dependencies change. Reading signals inside `fn` makes the layout automatically
- * reactive — e.g. branch on a field's value to add or drop nodes.
+ * Returns a `computed` Signal<LayoutNode[]>. If `fn` reads a signal, it re-runs whenever that
+ * signal changes and builds new nodes, so every component it renders is recreated (inputs lose
+ * focus and local state); dev mode logs a warning the first time. That suits structure that
+ * changes rarely, such as fields decided by loaded config or permissions. For conditions that
+ * change while the user fills the form, `when()`/`switchCase()` or the schema's `hidden()`
+ * re-render only what changes, and values can be read inside binding closures
+ * (`inputBinding('label', () => …)`).
  *
  * @example
  * const myLayout = layout(userForm, (f) => [
