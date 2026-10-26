@@ -20,7 +20,7 @@ export interface CheckoutModel {
   billing: Address;
   items: LineItem[];
   plan: Plan;
-  /** Business-plan only (rendered only when plan === 'Pro'). */
+  /** Business-plan only: the form schema hides it unless plan === 'Pro'. */
   company: string;
   rating: number;
 }

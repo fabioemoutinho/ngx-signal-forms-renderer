@@ -60,9 +60,9 @@ function sectionGroup(node: SectionConfig, f: FieldTree<CheckoutModel>): LayoutN
   }
   const section = () =>
     group(fieldsRecord(node.fields, f), { component: CardGroupComponent, bindings: [titleBinding] });
-  // Conditional sections are wrapped in when(): the section is built when shown, and rebuilt only
-  // when the condition flips, not on every value change.
-  return node.when ? when(() => matches(node.when!, f().value()), section) : section();
+  // A section that follows a field's visibility renders through when(field): built when the field
+  // becomes visible, removed when the schema hides it.
+  return node.whenVisible ? when(child(f, node.whenVisible), section) : section();
 }
 
 function fieldsRecord(fields: FieldConfig[], node: FieldTree<unknown>): Record<string, LayoutNode> {
@@ -95,15 +95,4 @@ function lineItemLayout(item: FieldTree<LineItem>): LayoutNode {
 /** Index a field tree node by string key (the schema is dynamic, so keys aren't statically known). */
 function child(node: FieldTree<unknown>, key: string): FieldTree<unknown> {
   return (node as unknown as Record<string, FieldTree<unknown>>)[key];
-}
-
-/** Tiny predicate evaluator for section `when` strings: 'field=value', '!field', or 'field'. */
-function matches(expr: string, value: CheckoutModel): boolean {
-  const v = value as unknown as Record<string, unknown>;
-  if (expr.includes('=')) {
-    const [key, expected] = expr.split('=');
-    return String(v[key]) === expected;
-  }
-  if (expr.startsWith('!')) return !v[expr.slice(1)];
-  return !!v[expr];
 }

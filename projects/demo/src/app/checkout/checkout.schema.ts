@@ -21,8 +21,11 @@ export interface SectionConfig {
    * field's native hidden(). Omit for sections that group top-level fields.
    */
   field?: string;
-  /** Show the section only while this condition holds, e.g. 'plan=Pro' or '!billingSameAsShipping'. */
-  when?: string;
+  /**
+   * Show the section only while this field is visible, e.g. 'company'. The condition itself lives
+   * in the form schema (`hidden()`), so it's written once and also controls validation.
+   */
+  whenVisible?: string;
 }
 
 export interface ArrayConfig {
@@ -80,7 +83,7 @@ export const checkoutSchema: FormSchema = [
   {
     kind: 'section',
     title: 'Business details',
-    when: 'plan=Pro',
+    whenVisible: 'company',
     fields: [{ kind: 'field', name: 'company', type: 'text', label: 'Company name' }],
   },
   {
