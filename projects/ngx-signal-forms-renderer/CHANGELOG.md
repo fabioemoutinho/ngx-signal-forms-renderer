@@ -38,6 +38,9 @@ may contain breaking changes; they are always called out under **Breaking**.
 
 ### Added
 
+- `RECIPES.md` (also in the npm package), each recipe backed by a test: which show/hide tool fits
+  which case, a sub-form per type, clearing a dependent value, array item actions, form-level
+  errors, submitting with `<form [formRoot]>` and focusing the first invalid field, a file control.
 - `content(typeOrComponent, { bindings, directives })`: a node for a component that isn't bound to
   a field — headings, help text, alerts, form-level errors, derived values. It receives only its
   own bindings. A dev-mode warning is logged when no component resolves, as for controls.

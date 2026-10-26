@@ -178,4 +178,8 @@ layout(orderForm, (f) => [
 - For Pattern B, `value` must be a `model()` (ModelSignal), not `input()` — it's two-way bound
 - Use `protected readonly` for template-bound members, `private readonly` for internal state
 - The library is UI-agnostic — bring your own components (Material, PrimeNG, custom, etc.)
-- Requires Angular 22+ (signal forms)
+- Requires Angular 22.1+ (signal forms); 22.2.2+ recommended
+- Array item actions: remove by identity (`items.filter(i => i !== item().value())`); `keyInParent()` is a string at runtime — wrap it in `Number()` for index math
+- Clear a dependent value on user edits with `outputBinding('valueChange', …)` on the driving control (it doesn't fire when the model is set from code)
+- Submission is signal forms' job: wrap `<sfr-form>` in `<form [formRoot]="f">` with `form(model, schema, { submission: { action, onInvalid } })`
+- More patterns: RECIPES.md in the library (sub-form per type, form-level errors, focus first error, file control)

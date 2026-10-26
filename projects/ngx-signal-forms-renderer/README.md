@@ -184,6 +184,8 @@ when(f.bio, () => group({ bio: control(f.bio) }, { type: 'card' }));
 Fields inside an inactive `when`/`switchCase` branch still validate, since a branch is layout only.
 Pair the branch with `hidden()` / `applyWhenValue()` in the schema when its fields shouldn't.
 
+See [RECIPES.md](./RECIPES.md) for which tool fits which case, wizard steps, and a sub-form per type.
+
 ## API Reference
 
 You build layouts with the functions below — you don't construct node objects by hand. `control`,
@@ -477,6 +479,18 @@ const orderLayout = layout(orderForm, (f) => [
 Because the layout is just data + functions, you can also build it from your own schema/config — the
 [demo](https://fabioemoutinho.github.io/ngx-signal-forms-renderer) renders a whole checkout form from a
 plain-data schema mapped onto these builders.
+
+## Recipes
+
+[RECIPES.md](./RECIPES.md) covers common tasks, each backed by a test:
+
+- showing and hiding: which tool fits which case, and wizard steps
+- a sub-form per type (`switchCase` + `applyWhenValue`)
+- clearing a dependent value when the user changes another
+- array item actions: add, remove, move
+- form-level errors
+- submitting with `<form [formRoot]>`, and focusing the first invalid field
+- a file control
 
 ## License
 
