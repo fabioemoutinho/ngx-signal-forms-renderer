@@ -90,7 +90,9 @@ export class CheckoutFormComponent {
   protected loadSample(): void {
     this.loading.set(true);
     setTimeout(() => {
-      this.model.set(sampleOrder());
+      // An existing order starts untouched, like a fresh form: reset() sets the value and clears
+      // touched/dirty left over from editing the previous one.
+      this.checkout().reset(sampleOrder());
       this.loading.set(false);
     }, 600);
   }
