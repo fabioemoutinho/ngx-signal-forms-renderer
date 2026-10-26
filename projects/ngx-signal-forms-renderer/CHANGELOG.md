@@ -8,6 +8,8 @@ may contain breaking changes; they are always called out under **Breaking**.
 
 ## [Unreleased]
 
+## [0.0.1-beta.2] - 2026-10-25
+
 ### Breaking
 
 - The minimum supported Angular version is now **22.1.0** (peer dependencies `>=22.1.0`). Angular
@@ -38,42 +40,43 @@ may contain breaking changes; they are always called out under **Breaking**.
 
 ### Added
 
-- `RECIPES.md` (also in the npm package), each recipe backed by a test: which show/hide tool fits
-  which case, a sub-form per type, clearing a dependent value, array item actions, form-level
-  errors, submitting with `<form [formRoot]>` and focusing the first invalid field, a file control.
-- `content(typeOrComponent, { bindings, directives })`: a node for a component that isn't bound to
-  a field — headings, help text, alerts, form-level errors, derived values. It receives only its
-  own bindings. A dev-mode warning is logged when no component resolves, as for controls.
-- An `empty` option on library-iterated arrays (`array(field, { empty }, itemLayout)`): a node
-  rendered as the only child while the array has no items, the layout's `@empty`. Its type,
-  `ArrayOptions`, extends `ContainerOptions`, so `empty` is a type error on other arrays and groups.
-- `when(condition, () => nodes, () => elseNodes)`: conditional layout, the layout's
-  `@if`. `condition` is a signal or function returning a boolean, or a field — `when(f.company, …)`
+- `when(condition, () => nodes, () => elseNodes)`: conditional layout, the layout's `@if`.
+  `condition` is a signal or function returning a boolean, or a field — `when(f.company, …)`
   renders while that field is visible in the schema. Branches are builder functions, built only
   when they become active and rebuilt only when the condition flips, so changing the values the
   condition reads keeps the branch's components. Renders no element of its own.
-- `switchCase(key, cases, { default: () => nodes })`: multi-branch layout, the layout's
-  `@switch`. `key` is a function or a field; the case whose name equals `String(key)` renders, else
-  `default` (also for a `null`/`undefined` key). Case names are typed against the key's values.
-  A case is rebuilt only when the matched case changes.
-- Both are layout only: fields in an inactive branch still validate. Pair them with the schema's
-  `hidden()`/`applyWhenValue()` when they shouldn't. A dev-mode warning is logged when a branch
-  re-runs while it stays active (it reads a signal), since that recreates its components.
+- `switchCase(key, cases, { default: () => nodes })`: multi-branch layout, the layout's `@switch`.
+  `key` is a function or a field; the case whose name equals `String(key)` renders, else `default`
+  (also for a `null`/`undefined` key). Case names are typed against the key's values. A case is
+  rebuilt only when the matched case changes.
 
-- A dev-mode warning when a `layout()` function, or an array's item layout function, re-runs
-  because it reads a signal. A re-run builds new nodes, so the components it renders are recreated
-  (inputs lose focus and local state). That is fine for structure that changes rarely, such as
-  loaded config; the warning makes the cost visible. Logged once per layout or item function.
+  Both are layout only: fields in an inactive branch still validate. Pair them with the schema's
+  `hidden()`/`applyWhenValue()` when they shouldn't.
+- `content(typeOrComponent, { bindings, directives })`: a node for a component that isn't bound to
+  a field — headings, help text, alerts, form-level errors, derived values. It receives only its
+  own bindings.
+- An `empty` option on library-iterated arrays (`array(field, { empty }, itemLayout)`): a node
+  rendered as the only child while the array has no items, the layout's `@empty`. Its type,
+  `ArrayOptions`, extends `ContainerOptions`, so `empty` is a type error on other arrays and groups.
 - Group and array wrappers now receive `field` and `state` when they declare them and the node has
   a field: data-driven groups (`group(f.address, …)`), library-iterated arrays and renderer-owned
   arrays (which already received `field`). Use them for section-level errors and pending state, or
   to tell an array's `empty` node apart from a single item. Explicit groups and static arrays have
   no field.
 - `provideSignalFormsRenderer()` in route and component `providers`, to add or override types for
-  part of an app. Registering the same key twice in one injector logs a dev-mode warning.
-- A dev-mode warning when a group's or array's `type` isn't registered (it renders its children
-  without a wrapper). The existing warning for controls, and now content, names the unregistered
-  type.
+  part of an app (see **Breaking** for how registrations now merge).
+- Dev-mode warnings, each logged once:
+  - when a `layout()` function, an array's item layout function, or a `when`/`switchCase` branch
+    re-runs because it reads a signal. A re-run builds new nodes, so the components it renders are
+    recreated (inputs lose focus and local state). That is fine for structure that changes rarely,
+    such as loaded config; the warning makes the cost visible.
+  - when a node's `type` isn't registered: a group or array renders its children without a
+    wrapper, and the existing control warning (now also for `content`) names the type.
+  - when the same type key is registered twice in one injector (the last registration wins).
+- `RECIPES.md`, each recipe backed by a test: which show/hide tool fits which case, a sub-form per
+  type, clearing a dependent value, array item actions, form-level errors, submitting with
+  `<form [formRoot]>` and focusing the first invalid field, a file control.
+- The npm package now includes `LICENSE` (MIT) and `RECIPES.md`.
 
 ### Fixed
 
@@ -81,6 +84,9 @@ may contain breaking changes; they are always called out under **Breaking**.
   renderer-owned arrays, `field`) input. The renderer now binds these reserved inputs only when the
   component declares them, as it already did for controls; previously Angular threw NG0315
   ("does not have an input with a public name of …") in dev mode.
+- The 0.0.1-beta.1 known issue — a `layout()` function that reads a signal recreates every
+  component — now has a proper alternative: `when()`/`switchCase()` rebuild only their branch, on a
+  flip. (The workaround it suggested, node-level `hidden`, is removed; see **Breaking**.)
 
 ## [0.0.1-beta.1] - 2026-10-24
 
@@ -134,6 +140,7 @@ may contain breaking changes; they are always called out under **Breaking**.
   visibility deferring to the field's native `hidden()` or a node-level `hidden` signal.
 - `<sfr-children>` helper for custom group/array wrapper components.
 
-[Unreleased]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.1...HEAD
+[Unreleased]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.2...HEAD
+[0.0.1-beta.2]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.1...v0.0.1-beta.2
 [0.0.1-beta.1]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.0...v0.0.1-beta.1
 [0.0.1-beta.0]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/releases/tag/v0.0.1-beta.0
