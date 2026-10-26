@@ -1,6 +1,6 @@
 ---
 name: ngx-signal-forms-renderer
-description: Use this skill when working with ngx-signal-forms-renderer — an Angular library for auto-rendering forms using Signal Forms. Trigger when code imports from 'ngx-signal-forms-renderer', uses SfrFormComponent, control(), group(), array(), layout(), or provideSignalFormsRenderer().
+description: Use this skill when working with ngx-signal-forms-renderer — an Angular library for auto-rendering forms using Signal Forms. Trigger when code imports from 'ngx-signal-forms-renderer', uses SfrFormComponent, control(), group(), array(), content(), when(), switchCase(), layout(), or provideSignalFormsRenderer().
 ---
 
 # ngx-signal-forms-renderer — Signal Forms Auto-Renderer
