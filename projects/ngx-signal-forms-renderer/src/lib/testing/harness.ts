@@ -82,10 +82,11 @@ export class CheckboxControl extends Tracked implements FormCheckboxControl {
 @Component({
   selector: 'test-list-wrapper',
   imports: [SfrChildrenComponent],
-  template: `<sfr-children [children]="children()" />`,
+  template: `{{ label() }}<sfr-children [children]="children()" />`,
 })
 export class ListWrapper extends Tracked {
   readonly children = input.required<LayoutNode[]>();
+  readonly label = input('');
 }
 
 /** Group wrapper that renders its keyed children inside a `<section>`. */

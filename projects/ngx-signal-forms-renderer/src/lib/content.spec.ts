@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { inputBinding, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { form } from '@angular/forms/signals';
+import { form, hidden } from '@angular/forms/signals';
 import { array, content, control, group } from './layout';
 import { provideSignalFormsRenderer } from './provider';
 import {
@@ -147,6 +147,20 @@ describe('array empty', () => {
     expect(created.filter((c) => c instanceof TextContent)).toHaveLength(1);
 
     await expectStable(() => host.f.other().value.set('y'));
+  });
+
+  it('does not render the empty node while the array is hidden by the schema', async () => {
+    const { host, act } = await renderForm(
+      { hide: true, items: [] as { name: string }[] },
+      (f) => [array(f.items, { empty: emptyNotice() }, (item) => control(item.name, { component: TrackedControl }))],
+      { schema: (p) => hidden(p.items, { when: ({ valueOf }) => valueOf(p.hide) }) },
+    );
+    const notices = () => created.filter((c) => c instanceof TextContent).length;
+    expect(notices()).toBe(0);
+
+    await act(() => host.f.hide().value.set(false));
+
+    expect(notices()).toBe(1);
   });
 
   it('renders nothing for an empty array without an empty node', async () => {
