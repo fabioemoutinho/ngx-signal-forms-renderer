@@ -1,4 +1,4 @@
-import { inputBinding, outputBinding } from '@angular/core';
+import { outputBinding } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
 import { control, group, array, when, LayoutNode } from 'ngx-signal-forms-renderer';
 import { CardGroupComponent } from '../components/card-group.component';
@@ -49,17 +49,12 @@ function buildNode(node: NodeConfig, f: FieldTree<CheckoutModel>, cb: AdapterCal
 }
 
 function sectionGroup(node: SectionConfig, f: FieldTree<CheckoutModel>): LayoutNode {
-  const titleBinding = inputBinding('title', () => node.title);
+  const card = { component: CardGroupComponent, inputs: { title: node.title } };
   if (node.field) {
     // Data-driven group bound to a sub-object field; native hidden() applies automatically.
-    return group(
-      child(f, node.field),
-      { component: CardGroupComponent, bindings: [titleBinding] },
-      (g) => fieldsRecord(node.fields, g),
-    );
+    return group(child(f, node.field), card, (g) => fieldsRecord(node.fields, g));
   }
-  const section = () =>
-    group(fieldsRecord(node.fields, f), { component: CardGroupComponent, bindings: [titleBinding] });
+  const section = () => group(fieldsRecord(node.fields, f), card);
   // A section that follows a field's visibility renders through when(field): built when the field
   // becomes visible, removed when the schema hides it.
   return node.whenVisible ? when(child(f, node.whenVisible), section) : section();
@@ -72,19 +67,17 @@ function fieldsRecord(fields: FieldConfig[], node: FieldTree<unknown>): Record<s
 }
 
 function fieldControl(fc: FieldConfig, field: FieldTree<unknown>): LayoutNode {
-  const bindings = [];
-  if (fc.label != null) bindings.push(inputBinding('label', () => fc.label));
-  if (fc.placeholder != null) bindings.push(inputBinding('placeholder', () => fc.placeholder));
-  if (fc.inputType != null) bindings.push(inputBinding('inputType', () => fc.inputType));
-  if (fc.options != null) bindings.push(inputBinding('options', () => fc.options));
-  const resolved = fc.type === 'rating' ? { component: RatingInputComponent } : { type: fc.type };
-  return control(field, { ...resolved, bindings });
+  // A registered key or a class: with a key in the mix, the inputs below are untyped.
+  const component = fc.type === 'rating' ? RatingInputComponent : fc.type;
+  // Keys the config leaves out are `undefined` and skipped, so each component keeps its default.
+  const { label, placeholder, inputType, options } = fc;
+  return control(field, { component, inputs: { label, placeholder, inputType, options } });
 }
 
 function lineItemLayout(item: FieldTree<LineItem>): LayoutNode {
   return group(
     item,
-    { component: CardGroupComponent, bindings: [inputBinding('title', () => 'Item')] },
+    { component: CardGroupComponent, inputs: { title: 'Item' } },
     (g) => ({
       sku: control(g.sku, { component: ProductPickerComponent }),
       quantity: control(g.quantity, { component: QuantityInputComponent }),

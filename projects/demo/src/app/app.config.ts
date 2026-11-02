@@ -14,7 +14,7 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideAnimationsAsync(),
     provideSignalFormsRenderer({
-      types: {
+      components: {
         text: TextInputComponent,
         select: SelectInputComponent,
         textarea: TextareaInputComponent,

@@ -12,6 +12,22 @@ export function warnOnce(key: object, message: string, ...context: unknown[]): v
   console.warn(`[ngx-signal-forms-renderer] ${message}`, ...context);
 }
 
+/** Messages already logged per key (e.g. a component class), so each logs once per key. */
+const warnedMessages = new WeakMap<object, Set<string>>();
+
+/**
+ * Logs a dev-mode warning once per distinct `message` for `key`, e.g. once per component class
+ * however many nodes, array items or branch rebuilds render it. No-op in production builds.
+ */
+export function warnOncePer(key: object, message: string, ...context: unknown[]): void {
+  if (typeof ngDevMode !== 'undefined' && !ngDevMode) return;
+  let seen = warnedMessages.get(key);
+  if (!seen) warnedMessages.set(key, (seen = new Set()));
+  if (seen.has(message)) return;
+  seen.add(message);
+  console.warn(`[ngx-signal-forms-renderer] ${message}`, ...context);
+}
+
 /** Context shared by the layout re-run warnings. */
 export const LAYOUT_RERUN_ADVICE =
   'If the signal read is accidental (e.g. inside a helper), wrap it in untracked(() => …). ' +

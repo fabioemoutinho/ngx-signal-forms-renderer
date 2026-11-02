@@ -2,26 +2,27 @@ import { inject, InjectionToken, Provider, Type } from '@angular/core';
 import { warnOnce } from './dev-warnings';
 
 /**
- * Registry mapping string type keys to component types.
- * A single unified registry for fields, groups, and arrays.
+ * Registry mapping string keys to component classes.
+ * A single unified registry for controls, wrappers (groups and arrays) and content.
  */
-export type SignalFormsRendererTypeRegistry = Record<string, Type<unknown>>;
+export type SignalFormsRendererComponentRegistry = Record<string, Type<unknown>>;
 
 /**
- * The types each `provideSignalFormsRenderer()` call contributes to its injector, in provider order.
+ * The components each `provideSignalFormsRenderer()` call contributes to its injector, in provider
+ * order.
  * @internal
  */
-const SIGNAL_FORMS_RENDERER_TYPES = new InjectionToken<SignalFormsRendererTypeRegistry[]>(
-  'SIGNAL_FORMS_RENDERER_TYPES',
+const SIGNAL_FORMS_RENDERER_COMPONENTS = new InjectionToken<SignalFormsRendererComponentRegistry[]>(
+  'SIGNAL_FORMS_RENDERER_COMPONENTS',
 );
 
 /**
- * The registry the renderer resolves `type` keys from: this injector's contributions merged over
- * the parent injector's registry. Empty when nothing is provided.
+ * The registry the renderer resolves `component` keys from: this injector's contributions merged
+ * over the parent injector's registry. Empty when nothing is provided.
  * @internal
  */
-export const SIGNAL_FORMS_RENDERER_TYPE_REGISTRY = new InjectionToken<SignalFormsRendererTypeRegistry>(
-  'SIGNAL_FORMS_RENDERER_TYPE_REGISTRY',
+export const SIGNAL_FORMS_RENDERER_REGISTRY = new InjectionToken<SignalFormsRendererComponentRegistry>(
+  'SIGNAL_FORMS_RENDERER_REGISTRY',
   { factory: () => ({}) },
 );
 
@@ -30,8 +31,8 @@ export const SIGNAL_FORMS_RENDERER_TYPE_REGISTRY = new InjectionToken<SignalForm
  */
 export interface SignalFormsRendererConfig {
   /**
-   * Map of string type keys to component types.
-   * Used for fields, groups, and arrays alike.
+   * Map of string keys to component classes, for `component: 'key'` on any node: controls,
+   * groups, arrays and content alike.
    *
    * @example
    * {
@@ -41,16 +42,16 @@ export interface SignalFormsRendererConfig {
    *   repeatable: RepeatableSectionComponent,
    * }
    */
-  types?: SignalFormsRendererTypeRegistry;
+  components?: SignalFormsRendererComponentRegistry;
 }
 
 /**
- * Registers component types for the renderer to resolve `type` keys with.
+ * Registers components for the renderer to resolve `component` keys with.
  *
  * Registrations merge: several calls in the same injector add up, and an injector's registry
- * extends its parent's — a route or component can add or override types without repeating the
- * app's. Where both define a key, the child's wins. Registering a key twice in the same injector
- * logs a dev-mode warning; the last registration wins.
+ * extends its parent's — a route or component can add or override components without repeating
+ * the app's. Where both define a key, the child's wins. Registering a key twice in the same
+ * injector logs a dev-mode warning; the last registration wins.
  *
  * Works in `ApplicationConfig.providers`, route `providers`, and component `providers`.
  *
@@ -59,7 +60,7 @@ export interface SignalFormsRendererConfig {
  * export const appConfig: ApplicationConfig = {
  *   providers: [
  *     provideSignalFormsRenderer({
- *       types: {
+ *       components: {
  *         text: TextInputComponent,
  *         select: SelectComponent,
  *         card: CardGroupComponent,
@@ -68,23 +69,23 @@ export interface SignalFormsRendererConfig {
  *   ]
  * };
  *
- * // A component that adds (or overrides) types for the forms it renders
- * @Component({ providers: [provideSignalFormsRenderer({ types: { card: CompactCard } })] })
+ * // A component that adds (or overrides) components for the forms it renders
+ * @Component({ providers: [provideSignalFormsRenderer({ components: { card: CompactCard } })] })
  */
 export function provideSignalFormsRenderer(config: SignalFormsRendererConfig = {}): Provider[] {
   return [
-    { provide: SIGNAL_FORMS_RENDERER_TYPES, multi: true, useValue: config.types ?? {} },
-    { provide: SIGNAL_FORMS_RENDERER_TYPE_REGISTRY, useFactory: mergeRegistry },
+    { provide: SIGNAL_FORMS_RENDERER_COMPONENTS, multi: true, useValue: config.components ?? {} },
+    { provide: SIGNAL_FORMS_RENDERER_REGISTRY, useFactory: mergeRegistry },
   ];
 }
 
-function mergeRegistry(): SignalFormsRendererTypeRegistry {
-  const parent = inject(SIGNAL_FORMS_RENDERER_TYPE_REGISTRY, { skipSelf: true, optional: true });
-  const contributions = inject(SIGNAL_FORMS_RENDERER_TYPES, { self: true });
-  const own: SignalFormsRendererTypeRegistry = {};
+function mergeRegistry(): SignalFormsRendererComponentRegistry {
+  const parent = inject(SIGNAL_FORMS_RENDERER_REGISTRY, { skipSelf: true, optional: true });
+  const contributions = inject(SIGNAL_FORMS_RENDERER_COMPONENTS, { self: true });
+  const own: SignalFormsRendererComponentRegistry = {};
   const duplicates = new Set<string>();
-  for (const types of contributions) {
-    for (const [key, component] of Object.entries(types)) {
+  for (const components of contributions) {
+    for (const [key, component] of Object.entries(components)) {
       if (Object.hasOwn(own, key) && own[key] !== component) duplicates.add(key);
       own[key] = component;
     }
@@ -92,9 +93,9 @@ function mergeRegistry(): SignalFormsRendererTypeRegistry {
   if (duplicates.size) {
     warnOnce(
       contributions,
-      `Types registered more than once in the same injector: ${[...duplicates].join(', ')}. The ` +
-        'last registration wins. Register each type once, or override it in a child injector ' +
-        '(route or component providers).',
+      `Components registered more than once in the same injector: ${[...duplicates].join(', ')}. ` +
+        'The last registration wins. Register each component once, or override it in a child ' +
+        'injector (route or component providers).',
     );
   }
   return { ...parent, ...own };

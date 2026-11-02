@@ -29,7 +29,7 @@ const textOf = (el: HTMLElement) =>
 // ── content() ─────────────────────────────────────────────────────────────
 
 describe('content', () => {
-  it('builds a field-less node from a component or a registered type', () => {
+  it('builds a field-less node from a component or a registered key', () => {
     const binding = inputBinding('text', () => 'Hi');
 
     expect(content(TextContent, { bindings: [binding] })).toEqual({
@@ -37,7 +37,7 @@ describe('content', () => {
       component: TextContent,
       bindings: [binding],
     });
-    expect(content('heading')).toEqual({ kind: 'content', type: 'heading' });
+    expect(content('heading')).toEqual({ kind: 'content', component: 'heading' });
   });
 
   it('renders the component with its own bindings only, never the reserved inputs', async () => {
@@ -50,11 +50,11 @@ describe('content', () => {
     expect([c.field(), c.state(), c.children()]).toEqual([undefined, undefined, undefined]);
   });
 
-  it('resolves a registered type', async () => {
+  it('resolves a registered key', async () => {
     const { fixture } = await renderForm(
       {},
       () => [content('heading', { bindings: [inputBinding('text', () => 'Billing')] })],
-      { providers: [provideSignalFormsRenderer({ types: { heading: TextContent } })] },
+      { providers: [provideSignalFormsRenderer({ components: { heading: TextContent } })] },
     );
 
     expect(textOf(fixture.nativeElement)).toBe('Billing');
@@ -109,7 +109,7 @@ describe('content', () => {
     const { fixture } = await renderForm({}, () => [content('unregistered')]);
 
     expect(fixture.nativeElement.querySelector('sfr-node').children).toHaveLength(0);
-    expect(count('No component resolved for content node')).toBe(1);
+    expect(count("Component 'unregistered' is not registered, so this content node renders nothing")).toBe(1);
   });
 });
 

@@ -1,26 +1,84 @@
-import { Binding, DirectiveWithBindings, Type } from '@angular/core';
+import { Binding, InputSignalWithTransform, Type } from '@angular/core';
 import { FieldTree } from '@angular/forms/signals';
+
+/**
+ * The public signal inputs of component `C` (`input()`, `input.required()`, `model()`), keyed by
+ * property name, each with the type it accepts (a transform's input type, e.g. `booleanAttribute`'s
+ * `unknown`). All optional: required inputs aren't enforced.
+ */
+export type ComponentSignalInputs<C> = {
+  // `| undefined` so `undefined` (skipped, keeping the input's default) type-checks under
+  // `exactOptionalPropertyTypes` too.
+  [K in keyof C as C[K] extends InputSignalWithTransform<any, any> ? K : never]?: C[K] extends InputSignalWithTransform<any, infer W> ? W | undefined : never;
+};
+
+/** A node's `component`: a key registered with `provideSignalFormsRenderer()`, or a class. */
+export type ComponentOrKey = string | Type<unknown>;
+
+/**
+ * Static `inputs` for a node whose `component` is `K`: typed from a class's public signal inputs,
+ * else any record (a registry key, `Type<unknown>`, a class with only decorator `@Input()`s). Keys
+ * are property names; the renderer binds each under the input's public name (its alias, if any).
+ * Required inputs aren't enforced.
+ *
+ * Not in the type: inputs the class exposes from its own `hostDirectives` (TypeScript can't see
+ * decorator arguments); bind those with `bindings`. A union of classes
+ * (`cond ? RatingInput : TextInput`) accepts the inputs of any of them; for an input only one has,
+ * write two nodes (`cond ? control(…, { component: RatingInput, … }) : control(…)`).
+ */
+export type ComponentInputs<K> = K extends Type<infer C>
+  ? unknown extends C
+    ? Record<string, unknown>
+    : [keyof ComponentSignalInputs<C>] extends [never]
+      ? Record<string, unknown>
+      : ComponentSignalInputs<C>
+  : Record<string, unknown>;
+
+/**
+ * A directive to attach to the node's component: a class, Angular's `{ type, bindings }`, or the
+ * same with fixed `inputs` for the directive (by public name). Its `bindings` are applied after its
+ * `inputs`.
+ */
+export type NodeDirective =
+  | Type<unknown>
+  | {
+      type: Type<unknown>;
+      inputs?: Readonly<Record<string, unknown>>;
+      bindings?: Binding[];
+    };
 
 /**
  * Shared options for component resolution on any layout node.
  */
-export interface LayoutNodeOptions {
-  /** Direct component type. Takes precedence over `type`. */
-  component?: Type<unknown>;
-  /** String type key, resolved via the type registry. */
-  type?: string;
+export interface LayoutNodeOptions<K extends ComponentOrKey = ComponentOrKey> {
+  /** The component to render: a key registered with `provideSignalFormsRenderer()`, or a class. */
+  component?: K;
+  /**
+   * Fixed values for the component's inputs, typed when `component` is a class:
+   * `{ label: 'Name' }` instead of `bindings: [inputBinding('label', () => 'Name')]`. With a
+   * registry key they also reach inputs the component exposes from its own `hostDirectives` (with a
+   * class those aren't typed: use `bindings`); a directive added through `directives` takes its
+   * values on its own entry. `undefined` values are skipped, so the
+   * component's default applies. A signal is passed as the value itself (the component reads it),
+   * with a dev-mode warning. Inputs the renderer binds itself (`field`, `state`, `children`) and, on
+   * a form control, the ones the `FormField` directive sets (`value`, `required`, `min`, `max`, …)
+   * are dropped with a dev-mode warning: set those through the form's schema (e.g.
+   * `max(p.rating, 5)`). A binding for the same input overrides the value.
+   */
+  inputs?: NoInfer<ComponentInputs<K>>;
   /**
    * Reactive bindings for the resolved component (`inputBinding`/`outputBinding`/`twoWayBinding`).
-   * Merged after the renderer's own bindings (field/state/children); don't re-bind those reserved
-   * inputs. Use a reactive accessor inside a binding for values that change over time — swapping
-   * the array recreates the component.
+   * Merged after the renderer's own bindings (field/state/children) and the static `inputs`; don't
+   * re-bind the reserved inputs. Use a reactive accessor inside a binding for values that change
+   * over time — swapping the array recreates the component.
    */
   bindings?: Binding[];
   /**
-   * Host directives to attach to the resolved component. Merged after the renderer's own
-   * (the `FormField` directive auto-attached to `FormValueControl`/`FormCheckboxControl` controls).
+   * Directives to attach to the resolved component, each with its own `inputs` and `bindings`.
+   * Merged after the renderer's own (the `FormField` directive auto-attached to
+   * `FormValueControl`/`FormCheckboxControl` controls).
    */
-  directives?: (Type<unknown> | DirectiveWithBindings<unknown>)[];
+  directives?: NodeDirective[];
 }
 
 /**
@@ -73,8 +131,8 @@ export interface ArrayNode extends LayoutNodeOptions {
 
 /**
  * A content node: a component that isn't bound to a field — a heading, help text, an alert,
- * form-level errors, a derived value. It receives only its own `bindings`; the renderer binds no
- * inputs of its own. Renders nothing when no component is resolved.
+ * form-level errors, a derived value. It receives only its own `inputs` and `bindings`; the
+ * renderer binds no inputs of its own. Renders nothing when no component is resolved.
  */
 export interface ContentNode extends LayoutNodeOptions {
   readonly kind: 'content';

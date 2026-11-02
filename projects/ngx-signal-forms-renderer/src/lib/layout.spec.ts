@@ -1,8 +1,9 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
-import { signal, inputBinding } from '@angular/core';
+import { booleanAttribute, Component, computed, Directive, Input, input, inputBinding, model, numberAttribute, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FieldTree, form } from '@angular/forms/signals';
 import { control, group, array, content, layout } from './layout';
+import { ComponentSignalInputs, LayoutNodeOptions } from './layout-types';
 
 function mockFieldTree<T>(value: T): any {
   const state = {
@@ -46,16 +47,21 @@ describe('control()', () => {
     const node = control(f);
     expect(node.kind).toBe('control');
     expect(node.field).toBe(f);
-    expect(node.type).toBeUndefined();
     expect(node.component).toBeUndefined();
   });
 
   it('should create a ControlNode with options', () => {
     const f = mockFieldTree('hello');
-    const node = control(f, { type: 'text', bindings: [inputBinding('label', () => 'Name')] });
+    const node = control(f, { component: 'text', bindings: [inputBinding('label', () => 'Name')] });
     expect(node.kind).toBe('control');
-    expect(node.type).toBe('text');
+    expect(node.component).toBe('text');
     expect(node.bindings?.length).toBe(1);
+  });
+
+  it("keeps the control's own field when options built elsewhere carry one", () => {
+    const own = mockFieldTree('');
+    const options = { component: 'text', field: mockFieldTree('other') };
+    expect(control(own, options).field).toBe(own);
   });
 
   it('should support component in options', () => {
@@ -85,15 +91,9 @@ describe('group()', () => {
     expect(Object.keys(node.children)).toEqual([]);
   });
 
-  it('should support type string for registry resolution', () => {
-    const node = group({}, { type: 'card' });
-    expect(node.type).toBe('card');
-    expect(node.component).toBeUndefined();
-  });
-
-  it('no longer accepts a node-level hidden signal (use when() or the schema)', () => {
-    // @ts-expect-error — removed; use when(condition, () => node) or the schema's hidden()
-    group({}, { hidden: signal(true) });
+  it('should support a registry key for the component', () => {
+    const node = group({}, { component: 'card' });
+    expect(node.component).toBe('card');
   });
 
   it('should create a GroupNode from data-driven FieldTree + callback', () => {
@@ -186,6 +186,45 @@ describe('layout()', () => {
   });
 });
 
+// Components for the static inputs typing tests (never rendered).
+@Component({ selector: 'test-rating', template: '' })
+class Rating {
+  readonly label = input('');
+  readonly stars = input(5, { alias: 'count' });
+  readonly compact = input(false, { transform: booleanAttribute });
+  readonly size = input<number, string | number>(1, { transform: numberAttribute });
+  readonly open = model(false);
+  readonly derived = computed(() => 1);
+}
+class PlainProps {
+  label = '';
+}
+@Component({ selector: 'test-other', template: '' })
+class Other {
+  readonly title = input('');
+}
+@Component({ selector: 'test-other-with-hint', template: '' })
+class OtherWithHint extends Other {
+  readonly hint = input('');
+}
+@Component({ selector: 'test-mixed', template: '' })
+class Mixed {
+  readonly label = input('');
+  @Input() legacy = '';
+}
+@Directive({ selector: '[testTip]' })
+class Tip {
+  readonly tip = input('');
+}
+@Component({
+  selector: 'test-with-tip',
+  template: '',
+  hostDirectives: [{ directive: Tip, inputs: ['tip'] }],
+})
+class WithTip {
+  readonly label = input('');
+}
+
 describe('builder types', () => {
   const makeForm = () =>
     TestBed.runInInjectionContext(() => form(signal({ items: [{ name: 'a' }] })));
@@ -204,6 +243,107 @@ describe('builder types', () => {
     const node = content('heading');
     // @ts-expect-error — content isn't bound to a field
     void node.field;
-    expect(node).toEqual({ kind: 'content', type: 'heading' });
+    expect(node).toEqual({ kind: 'content', component: 'heading' });
+  });
+
+  it('types static inputs from the component class', () => {
+    const name = makeForm().items[0].name;
+    control(name, { component: Rating, inputs: { label: 'Stars', stars: 3, compact: 'yes', size: '3', open: true } });
+    // @ts-expect-error — not an input of Rating
+    control(name, { component: Rating, inputs: { nope: 1 } });
+    // @ts-expect-error — `label` takes a string
+    control(name, { component: Rating, inputs: { label: 1 } });
+    // @ts-expect-error — keyed by property name (`stars`), not by the public alias
+    control(name, { component: Rating, inputs: { count: 3 } });
+    // @ts-expect-error — a computed signal is not an input
+    control(name, { component: Rating, inputs: { derived: 1 } });
+    group({}, { component: Rating, inputs: { label: 'Stars' } });
+    // @ts-expect-error — not an input of Rating
+    array(makeForm().items, { component: Rating, inputs: { nope: 1 } });
+    // @ts-expect-error — not an input of Rating
+    content(Rating, { inputs: { nope: 1 } });
+  });
+
+  it('leaves static inputs untyped for a registry key or a class without signal inputs', () => {
+    const name = makeForm().items[0].name;
+    control(name, { component: 'rating', inputs: { anything: 1 } });
+    content('heading', { inputs: { text: 'Billing' } });
+    control(name, { component: PlainProps, inputs: { anything: 1 } });
+  });
+
+  it('accepts the inputs of any class in a union of classes', () => {
+    const name = makeForm().items[0].name;
+    const pick = (flag: boolean) => (flag ? Rating : Other);
+    control(name, { component: pick(true), inputs: { label: 'x' } });
+    control(name, { component: pick(false), inputs: { title: 'x' } });
+    // Not checked against the class that renders: `title` reaches Rating too (NG0315 in dev mode).
+    control(name, { component: pick(true), inputs: { label: 'x', title: 'y' } });
+    // @ts-expect-error — an input of neither class
+    control(name, { component: pick(true), inputs: { nope: 1 } });
+    content(pick(true), { inputs: { title: 'x' } });
+    group({}, { component: pick(true) });
+  });
+
+  it("types a subclass in a union as its base class, TypeScript's reduction of the union", () => {
+    const name = makeForm().items[0].name;
+    const pick = (flag: boolean) => (flag ? Other : OtherWithHint);
+    control(name, { component: pick(true), inputs: { title: 'x' } });
+    // @ts-expect-error — the union reduces to Other, which has no `hint`
+    control(name, { component: pick(true), inputs: { hint: 'x' } });
+  });
+
+  it('types an input only one class has when each class is its own node', () => {
+    const name = makeForm().items[0].name;
+    const compact = signal(true);
+    void (compact()
+      ? control(name, { component: Rating, inputs: { stars: 3 } })
+      : control(name, { component: Other, inputs: { title: 'x' } }));
+  });
+
+  it("doesn't type inputs from the class's hostDirectives: they go through bindings", () => {
+    const name = makeForm().items[0].name;
+    // @ts-expect-error — TypeScript can't see decorator arguments
+    control(name, { component: WithTip, inputs: { label: 'x', tip: 'Hi' } });
+    control(name, { component: WithTip, inputs: { label: 'x' }, bindings: [inputBinding('tip', () => 'Hi')] });
+    control(name, { component: 'withTip', inputs: { tip: 'Hi' } });
+  });
+
+  it("exports a class's typed inputs as ComponentSignalInputs", () => {
+    expectTypeOf<keyof ComponentSignalInputs<Rating>>().toEqualTypeOf<'label' | 'stars' | 'compact' | 'size' | 'open'>();
+    expectTypeOf<ComponentSignalInputs<Rating>['size']>().toEqualTypeOf<string | number | undefined>();
+  });
+
+  it('leaves inputs untyped when the component may be a registry key', () => {
+    const name = makeForm().items[0].name;
+    const pick = (flag: boolean) => (flag ? Rating : 'rating');
+    control(name, { component: pick(true), inputs: { anything: 1 } });
+  });
+
+  it('lets typed options stand in for the plain LayoutNodeOptions type', () => {
+    const typed: LayoutNodeOptions<typeof Rating> = { component: Rating, inputs: { label: 'x' } };
+    const plain: LayoutNodeOptions = typed;
+    const list: LayoutNodeOptions[] = [typed, { component: 'text' }];
+    expect([plain, list.length]).toEqual([typed, 2]);
+  });
+
+  it('checks options declared in a variable with satisfies', () => {
+    const ok = { component: Rating, inputs: { label: 'x' } } satisfies LayoutNodeOptions<typeof Rating>;
+    // @ts-expect-error — not an input of Rating
+    const typo = { component: Rating, inputs: { label: 'x', nope: 1 } } satisfies LayoutNodeOptions<typeof Rating>;
+    control(makeForm().items[0].name, ok);
+    void typo;
+  });
+
+  it('types only signal inputs: a decorator input on the same class goes through bindings', () => {
+    const name = makeForm().items[0].name;
+    control(name, { component: Mixed, inputs: { label: 'x' } });
+    // @ts-expect-error — decorator @Input()s aren't typed; use bindings: [inputBinding('legacy', …)]
+    control(name, { component: Mixed, inputs: { legacy: 'x' } });
+    control(name, { component: Mixed, bindings: [inputBinding('legacy', () => 'x')] });
+  });
+
+  it("takes untyped inputs on a directive entry", () => {
+    const name = makeForm().items[0].name;
+    control(name, { component: 'text', directives: [{ type: Rating, inputs: { anything: 1 } }] });
   });
 });

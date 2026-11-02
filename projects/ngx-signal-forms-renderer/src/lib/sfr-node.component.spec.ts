@@ -70,7 +70,7 @@ class CheckedInputOnlyControl {
 
 // ── Harness ────────────────────────────────────────────────────────────────
 
-async function render(options: LayoutNodeOptions, types: Record<string, Type<unknown>> = {}) {
+async function render(options: LayoutNodeOptions, components: Record<string, Type<unknown>> = {}) {
   @Component({
     imports: [SfrFormComponent],
     template: `<sfr-form [layout]="l" />`,
@@ -81,7 +81,7 @@ async function render(options: LayoutNodeOptions, types: Record<string, Type<unk
     readonly l = layout(this.f, (f) => [control(f.name, options)]);
   }
 
-  TestBed.configureTestingModule({ providers: [provideSignalFormsRenderer({ types })] });
+  TestBed.configureTestingModule({ providers: [provideSignalFormsRenderer({ components })] });
   const fixture = TestBed.createComponent(Host);
   await fixture.whenStable();
   return fixture;
@@ -178,14 +178,8 @@ describe('SfrNodeComponent control rendering', () => {
     expect(instance.field()).toBe(fixture.componentInstance.f.name);
   });
 
-  it('resolves the component from the type registry', async () => {
-    const fixture = await render({ type: 'text' }, { text: FieldControl });
+  it('resolves a component key from the registry', async () => {
+    const fixture = await render({ component: 'text' }, { text: FieldControl });
     expect(instanceOf(fixture, FieldControl).field()).toBe(fixture.componentInstance.f.name);
-  });
-
-  it('prefers a direct component over a registry type', async () => {
-    const fixture = await render({ component: StaticControl, type: 'text' }, { text: FieldControl });
-    expect(fixture.debugElement.query(By.directive(StaticControl))).not.toBeNull();
-    expect(fixture.debugElement.query(By.directive(FieldControl))).toBeNull();
   });
 });

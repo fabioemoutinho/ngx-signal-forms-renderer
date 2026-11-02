@@ -407,13 +407,20 @@ describe('node kinds', () => {
   it('warns in dev mode when a control resolves no component', async () => {
     const { count } = spyWarn();
     await renderForm({ name: 'Ada' }, (f) => [control(f.name)]);
-    expect(count('No component resolved for control node')).toBe(1);
+    expect(count("A control node has no 'component', so it renders nothing")).toBe(1);
   });
 
-  it('names an unregistered control type in the warning', async () => {
+  it('names an unregistered component key in the warning', async () => {
     const { count } = spyWarn();
-    await renderForm({ name: 'Ada' }, (f) => [control(f.name, { type: 'nope' })]);
-    expect(count("Type 'nope' is not registered")).toBe(1);
+    await renderForm({ name: 'Ada' }, (f) => [control(f.name, { component: 'nope' })]);
+    expect(count("Component 'nope' is not registered")).toBe(1);
+  });
+
+  it("doesn't resolve a key to an Object.prototype member", async () => {
+    const { count } = spyWarn();
+    const { fixture } = await renderForm({ name: 'Ada' }, (f) => [control(f.name, { component: 'toString' })]);
+    expect(fixture.nativeElement.querySelector('sfr-node').children).toHaveLength(0);
+    expect(count("Component 'toString' is not registered")).toBe(1);
   });
 });
 
@@ -562,13 +569,13 @@ describe('wrapper bindings', () => {
 
 describe('registry resolution', () => {
   const providers = [
-    provideSignalFormsRenderer({ types: { text: TrackedControl, card: CardWrapper, list: ListWrapper } }),
+    provideSignalFormsRenderer({ components: { text: TrackedControl, card: CardWrapper, list: ListWrapper } }),
   ];
 
   it('resolves a group wrapper by type', async () => {
     const { all, text } = await renderForm(
       { a: 'x' },
-      (f) => [group({ a: control(f.a, { type: 'text' }) }, { type: 'card' })],
+      (f) => [group({ a: control(f.a, { component: 'text' }) }, { component: 'card' })],
       { providers },
     );
     expect(all(CardWrapper)).toHaveLength(1);
@@ -578,34 +585,34 @@ describe('registry resolution', () => {
   it('resolves a library-iterated array wrapper by type', async () => {
     const { all, text } = await renderForm(
       { items: items('a', 'b') },
-      (f) => [array(f.items, { type: 'list' }, (item) => control(item.name, { type: 'text' }))],
+      (f) => [array(f.items, { component: 'list' }, (item) => control(item.name, { component: 'text' }))],
       { providers },
     );
     expect(all(ListWrapper)).toHaveLength(1);
     expect(text()).toBe('a b');
   });
 
-  it('falls back to rendering the children when a group type is not registered', async () => {
+  it('falls back to rendering the children when a group key is not registered', async () => {
     const { text } = await renderForm(
       { a: 'x' },
-      (f) => [group({ a: control(f.a, { type: 'text' }) }, { type: 'unknown' })],
+      (f) => [group({ a: control(f.a, { component: 'text' }) }, { component: 'unknown' })],
       { providers },
     );
     expect(text()).toBe('x');
   });
 
-  it('warns in dev mode when a group or array type is not registered', async () => {
+  it('warns in dev mode when a group or array key is not registered', async () => {
     const { warn, count } = spyWarn();
     await renderForm(
       { a: 'x', items: items('a') },
       (f) => [
-        group({ a: control(f.a, { type: 'text' }) }, { type: 'unknown-card' }),
-        array(f.items, { type: 'unknown-list' }, (item) => control(item.name, { type: 'text' })),
+        group({ a: control(f.a, { component: 'text' }) }, { component: 'unknown-card' }),
+        array(f.items, { component: 'unknown-list' }, (item) => control(item.name, { component: 'text' })),
       ],
       { providers },
     );
-    expect(count("Type 'unknown-card' is not registered")).toBe(1);
-    expect(count("Type 'unknown-list' is not registered")).toBe(1);
+    expect(count("Component 'unknown-card' is not registered")).toBe(1);
+    expect(count("Component 'unknown-list' is not registered")).toBe(1);
     expect(warn).toHaveBeenCalledTimes(2);
   });
 

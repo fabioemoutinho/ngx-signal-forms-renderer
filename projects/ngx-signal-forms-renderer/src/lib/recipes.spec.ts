@@ -82,7 +82,7 @@ describe('recipe: sub-form per type (switchCase + applyWhenValue)', () => {
     const { host, act, fixture } = await renderForm(
       { kind: 'person', name: 'Ada', company: '', vatId: '' } as Customer,
       (f) => [
-        control(f.kind, { component: SelectInput, bindings: [inputBinding('options', () => ['person', 'company'])] }),
+        control(f.kind, { component: SelectInput, inputs: { options: ['person', 'company'] } }),
         switchCase(f.kind, {
           person: () => control(f.name, { component: TextInput }),
           company: () => [control(f.company, { component: TextInput }), control(f.vatId, { component: TextInput })],
@@ -116,10 +116,8 @@ describe('recipe: clearing a dependent value when the user changes another', () 
     const { host, act, fixture } = await renderForm({ country: 'US', state: 'CA' }, (f) => [
       control(f.country, {
         component: SelectInput,
-        bindings: [
-          inputBinding('options', () => ['US', 'CA']),
-          outputBinding('valueChange', () => f.state().value.set('')),
-        ],
+        inputs: { options: ['US', 'CA'] },
+        bindings: [outputBinding('valueChange', () => f.state().value.set(''))],
       }),
       control(f.state, { component: TextInput }),
     ]);
@@ -348,7 +346,7 @@ class FileInput implements FormValueControl<File | null> {
 describe('recipe: file control', () => {
   it('writes the picked file into the form', async () => {
     const { host, act, fixture } = await renderForm({ avatar: null as File | null }, (f) => [
-      control(f.avatar, { component: FileInput, bindings: [inputBinding('accept', () => 'image/*')] }),
+      control(f.avatar, { component: FileInput, inputs: { accept: 'image/*' } }),
     ]);
     const input: HTMLInputElement = fixture.nativeElement.querySelector('input[type=file]');
     const file = new File(['x'], 'me.png', { type: 'image/png' });

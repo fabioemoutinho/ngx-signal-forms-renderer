@@ -58,7 +58,27 @@ export class SelectInput implements FormValueControl<string> {
 
 `when` and `switchCase` only rebuild a branch when the condition flips, so the user can keep typing in
 the fields that drive them. Reading a signal inside `layout()` rebuilds everything it renders on every
-change, which suits structure that rarely changes (a dev-mode warning says when it happens).
+change, which suits structure that rarely changes (a dev-mode warning says when it happens). To choose
+which signals rebuild it, read those first and build the rest inside `untracked()`:
+
+```typescript
+readonly l = layout(this.f, (f) => {
+  const { showPhone } = this.config(); // rebuilds the form when the config changes
+  return untracked(() => [
+    control(f.name, { component: TextInput }),
+    ...(showPhone ? [control(f.phone, { component: TextInput })] : []),
+  ]);
+});
+```
+
+Only reads in the layout function's own body count, and a data-driven `group(field, (g) => …)` callback
+runs as part of it. `when`/`switchCase` conditions and branches, `array` item layouts and binding
+closures run on their own.
+
+**Focus.** A branch that stops being active is destroyed with its components. If the focused element
+was inside it, the browser moves focus to the page, and keyboard and screen reader users lose their
+place. Keep the control that flips a branch outside that branch, or move focus yourself after the
+flip with the next field's `focusBoundControl()`.
 
 Wizard steps, either as one layout:
 
@@ -92,7 +112,7 @@ const f = form(model, (p) => {
 });
 
 layout(f, (f) => [
-  control(f.kind, { component: SelectInput, bindings: [inputBinding('options', () => ['person', 'company'])] }),
+  control(f.kind, { component: SelectInput, inputs: { options: ['person', 'company'] } }),
   switchCase(f.kind, {
     person: () => control(f.name, { component: TextInput }),
     company: () => [control(f.company, { component: TextInput }), control(f.vatId, { component: TextInput })],
@@ -111,10 +131,8 @@ or set from code, so loading a saved address doesn't wipe its state.
 ```typescript
 control(f.country, {
   component: SelectInput,
-  bindings: [
-    inputBinding('options', () => countries),
-    outputBinding('valueChange', () => f.state().value.set('')),
-  ],
+  inputs: { options: countries },
+  bindings: [outputBinding('valueChange', () => f.state().value.set(''))],
 }),
 control(f.state, { component: TextInput }),
 ```
@@ -280,7 +298,7 @@ export class FileInput implements FormValueControl<File | null> {
   }
 }
 
-control(f.avatar, { component: FileInput, bindings: [inputBinding('accept', () => 'image/*')] });
+control(f.avatar, { component: FileInput, inputs: { accept: 'image/*' } });
 ```
 
 A browser never lets code set a file input's selection, so the control can't show a file that was set

@@ -26,7 +26,7 @@ ngx-signal-forms-renderer auto-renders Angular forms from configuration, powered
 import { provideSignalFormsRenderer } from 'ngx-signal-forms-renderer';
 
 provideSignalFormsRenderer({
-  types: {
+  components: {
     text: TextInputComponent,
     select: SelectComponent,
     card: CardGroupComponent,       // groups can use registry too
@@ -35,7 +35,7 @@ provideSignalFormsRenderer({
 })
 ```
 
-Calls merge: several in one injector add up, and route/component `providers` extend the parent's registry (child wins on the same key). Use component `providers: [provideSignalFormsRenderer(...)]` to override a type for one form.
+Calls merge: several in one injector add up, and route/component `providers` extend the parent's registry (child wins on the same key). Use component `providers: [provideSignalFormsRenderer(...)]` to override a component for one form.
 
 ### Builder Functions
 
@@ -44,12 +44,13 @@ import { inputBinding } from '@angular/core';
 import { layout, control, group, array, content, when, switchCase } from 'ngx-signal-forms-renderer';
 
 // control(fieldRef, options?) — renders a form control
-control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
-control(f.bio, { component: RichTextEditor })
+control(f.name, { component: 'text', inputs: { label: 'Name' } })     // registry key, fixed inputs
+control(f.bio, { component: RichTextEditor, inputs: { rows: 4 } })    // class: inputs are type-checked
+control(f.email, { component: 'text', bindings: [inputBinding('hint', hintSignal)] })  // values that change
 
 // group(children, options?) — explicit keyed children
 group({ name: control(f.name) })
-group({ name: control(f.name) }, { type: 'card', bindings: [inputBinding('title', () => 'Info')] })
+group({ name: control(f.name) }, { component: 'card', inputs: { title: 'Info' } })
 
 // group(fieldRef, fn) or group(fieldRef, options, fn) — data-driven from a sub-object field
 group(f.address, (a) => ({ street: control(a.street), city: control(a.city) }))
@@ -60,12 +61,12 @@ array(f.items, { component: ItemList })            // renderer-owned: component 
 array([control(f.step1), control(f.step2)])        // static ordered nodes
 array(f.items, { empty: content('hint') }, itemLayout)  // `empty` renders while there are no items
 
-// content(typeOrComponent, { bindings?, directives? }) — a component not bound to a field
-content('heading', { bindings: [inputBinding('text', () => 'Billing')] })
+// content(component, { inputs?, bindings?, directives? }) — a component not bound to a field
+content('heading', { inputs: { text: 'Billing' } })
 
 // when(condition, () => nodes, () => elseNodes?) — conditional layout (the layout's @if)
 when(isBusiness, () => [control(f.company)], () => control(f.birthDate))
-when(f.company, () => group({ company: control(f.company) }, { type: 'card' }))  // while field visible
+when(f.company, () => group({ company: control(f.company) }, { component: 'card' }))  // while field visible
 
 // switchCase(key, cases, { default? }) — multi-branch layout (the layout's @switch)
 switchCase(f.plan, { business: () => control(f.company) }, { default: () => [] })
@@ -84,10 +85,15 @@ const myLayout = layout(myForm, (f) => [
 
 ### Component Resolution
 
-1. `node.component` (direct component reference) — highest priority
-2. `node.type` resolved via registry — fallback
+`component` is a class, or a key registered with `provideSignalFormsRenderer({ components })`, on controls, groups, arrays and content alike. All options go directly on the node.
 
-This applies to controls, groups, AND arrays. All options go directly on the node — there is no separate `def` layer.
+### Inputs
+
+- `inputs: { … }` — fixed input values. Typed from the class's signal inputs when `component` is a class; untyped for a registry key. A choice of classes (`cond ? A : B`) accepts any of their inputs; for an input only one has, write each class as its own node (`cond ? control(f.x, { component: A, inputs: {…} }) : control(f.x, { component: B })`). Keyed by property name (an aliased input is bound under its public name). Bound with `inputBinding`, so they also reach inputs the component exposes from its own `hostDirectives`; a name nothing declares throws NG0315 in dev. `undefined` values are skipped. A signal value is passed as the signal itself (dev warning); values that change go in `bindings`.
+- `bindings: [inputBinding(…), outputBinding(…)]` — values that change, and outputs. Applied after `inputs`, so they override a static value.
+- `directives: [entry, …]` — each entry is a directive class (`Dir`) or `{ type: Dir, inputs?: { … }, bindings?: [...] }`, at most one entry per directive. A directive's inputs go on its own entry (by public name, untyped); the node's `inputs`/`bindings` target the component only.
+- Ignored with a dev warning: inputs the renderer binds (`field`, `state`, `children`) and, on a form control, inputs `FormField` sets (`value`, `required`, `disabled`, `min`, `max`, `errors`, …), on the component and, all but `value`/`checked`, on its directive entries. Set those through the form: `value` in the model, the ones with a schema rule through that rule (`max(p.x, 5)`, `disabled(p.x)`); the rest Angular computes. Angular rejects them next to `[formField]` in templates too.
+- Not typed: decorator `@Input()`s on a class that also has signal inputs, `protected` inputs, and inputs from the class's own `hostDirectives` — use `bindings`. Required inputs aren't enforced. Options in a variable: `satisfies LayoutNodeOptions<typeof X>`.
 
 ### Control Component Contract
 
@@ -109,7 +115,7 @@ Two patterns:
 export class TextInputComponent {
   readonly field = input.required<FieldTree<string>>();   // provided by the library
   readonly state = input.required<FieldState<string>>();  // provided by the library
-  readonly label = input('');       // custom prop
+  readonly label = input('');       // from inputs or bindings
 }
 ```
 
@@ -141,7 +147,7 @@ Both of Angular's custom-control contracts are supported: `FormValueControl<T>` 
 export class MyGroupComponent {
   readonly children = input.required<Record<string, LayoutNode>>(); // provided by the library
   readonly state = input<FieldState<unknown>>(); // optional — data-driven groups/array fields only
-  readonly title = input(''); // from bindings
+  readonly title = input(''); // from inputs or bindings
 }
 ```
 
@@ -151,6 +157,8 @@ export class MyGroupComponent {
 - **Layout structure** (a card around several fields, a sub-form per type): use `when()` / `switchCase()`. A branch is rebuilt only when its condition flips. `when(f.x, …)` renders while field `x` is visible, so validity conditions stay in the schema.
 - Branches are layout only — fields in an inactive branch still validate. Pair with `hidden()` / `applyWhenValue()` in the schema.
 - Branching on a signal inside `layout()` also works, but every re-run recreates all rendered components (dev-mode warning). Fine for rarely-changing structure (loaded config); use `when()` / `switchCase()` for anything that changes while the user types.
+- Only reads in the `layout()` function's own body re-run it (data-driven `group(field, fn)` callbacks run right away, so they count); `when`/`switchCase` conditions and branches, `array` item layouts and binding closures don't. To choose what rebuilds the form: read those signals first, then `return untracked(() => [...])`.
+- A branch that deactivates destroys its components; if focus was inside, it moves to the page. Keep the control that flips a branch outside it, or move focus with `focusBoundControl()`.
 
 ### Layout Composability
 
@@ -159,14 +167,14 @@ Layouts are plain functions — composability is free:
 ```typescript
 function addressFields(addr: FieldTree<Address>): Record<string, LayoutNode> {
   return {
-    street: control(addr.street, { type: 'text', bindings: [inputBinding('label', () => 'Street')] }),
-    city: control(addr.city, { type: 'text', bindings: [inputBinding('label', () => 'City')] }),
+    street: control(addr.street, { component: 'text', inputs: { label: 'Street' } }),
+    city: control(addr.city, { component: 'text', inputs: { label: 'City' } }),
   };
 }
 
 layout(orderForm, (f) => [
-  group(f.shippingAddress, { type: 'card' }, addressFields),
-  group(f.billingAddress, { type: 'card' }, addressFields),
+  group(f.shippingAddress, { component: 'card' }, addressFields),
+  group(f.billingAddress, { component: 'card' }, addressFields),
 ]);
 ```
 

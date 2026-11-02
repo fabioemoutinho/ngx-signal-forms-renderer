@@ -8,6 +8,109 @@ may contain breaking changes; they are always called out under **Breaking**.
 
 ## [Unreleased]
 
+### Breaking
+
+- Nodes name their component in one option, `component`, which now takes a registered key or a
+  class. The separate `type` option is removed: move its key to `component`. (`component` used to
+  win when both were set; with one option there is nothing to choose.)
+
+  ```ts
+  // before
+  control(f.name, { type: 'text' })
+  // after
+  control(f.name, { component: 'text' })
+  ```
+
+  When migrating:
+  - Directive entries keep Angular's `type` (`directives: [{ type: TooltipDirective, … }]`), so a
+    blind find-and-replace of `type:` breaks them.
+  - Options built in a variable and then spread aren't checked for unknown properties, so a leftover
+    `type` there still compiles and the node renders without a component. Check those by hand, or
+    with `satisfies LayoutNodeOptions`:
+
+    ```ts
+    const resolved = isRating ? { component: RatingInput } : { type: key };   // leftover `type`
+    control(f.score, { ...resolved, bindings });                              // compiles
+    ```
+  - Code that reads nodes (e.g. a wrapper inspecting `children()`): every node kind lost `type`, and
+    `node.component` is now `string | Type<unknown>` (a key or a class), not only a class.
+
+    ```ts
+    // before
+    const isLabel = node.component === LabelComponent || node.type === 'label';
+    // after
+    const isLabel = node.component === LabelComponent || node.component === 'label';
+    ```
+
+- `provideSignalFormsRenderer({ types })` is now `provideSignalFormsRenderer({ components })`, and
+  the exported `SignalFormsRendererTypeRegistry` type is now `SignalFormsRendererComponentRegistry`.
+  The registry still maps keys to component classes, for every node kind.
+
+  ```ts
+  // before
+  provideSignalFormsRenderer({ types: { text: TextInputComponent } })
+  // after
+  provideSignalFormsRenderer({ components: { text: TextInputComponent } })
+  ```
+
+- `content(typeOrComponent, options)`'s first parameter is now named `component`; calls don't
+  change. A content node built from a key now stores it as `component` (`{ kind: 'content',
+  component: 'heading' }`), not `type`.
+- Dev-mode warnings for a node whose component doesn't resolve now read "Component 'x' is not
+  registered, so this … node renders nothing" (was "Type 'x' …") or "A … node has no 'component'",
+  log the node's element, and appear once per message for each registry (one per injector that
+  provides components, so usually once per app) instead of once per node. The
+  duplicate-registration warning says "Components registered more than once".
+
+### Added
+
+- `inputs` on every node with a component (`control`, `group`, `array`, `content`): fixed input
+  values without `inputBinding`.
+
+  ```ts
+  // before
+  control(f.name, { component: 'text', bindings: [inputBinding('label', () => 'Name')] })
+  // after
+  control(f.name, { component: 'text', inputs: { label: 'Name' } })
+  ```
+
+  When `component` is a class, `inputs` is typed from its signal inputs (`input()`, `model()`): an
+  unknown name or a wrong value type is a compile error; a union of classes accepts the inputs of
+  any of them. With a registry key, a class that may be a key, or a class with only decorator
+  `@Input()`s, it's untyped. Each value is bound with `inputBinding`, so it also reaches inputs the
+  component exposes from its own `hostDirectives` (with a class those aren't typed: use
+  `bindings`), and a name nothing declares makes Angular throw
+  NG0315 in dev mode, as with `bindings`. An aliased input is written by its property name and bound
+  under its public name. `undefined` values are skipped, so the component keeps its default. A
+  signal is passed as the value itself (for inputs that take a signal), with a dev-mode warning;
+  values that change belong in `bindings`. A binding for the same input overrides the static
+  value.
+- `inputs` on directive entries: `directives: [{ type: TooltipDirective, inputs: { text: 'Hi' } }]`,
+  applied before the entry's own `bindings`. Angular aims a node's `inputs` and `bindings` at the
+  component, so a directive's values go on its entry.
+- Types: `LayoutNodeOptions<K>` (and `ContainerOptions<K>`, `ArrayOptions<K>`) take the component
+  (`typeof MyComponent`, or a key) as their parameter; `ComponentOrKey`, `ComponentInputs<K>`,
+  `ComponentSignalInputs<C>` (a class's typed inputs) and `NodeDirective` are exported.
+- Dev-mode warnings, each once per component class and message, logging the node's element: static
+  inputs that are ignored because the renderer binds them itself (`field`, `state`, `children`) or,
+  on a form control, because the `FormField` directive sets them from the field's state (`value`,
+  `required`, `disabled`, `min`, `max`, `errors`, …; Angular rejects those bindings next to
+  `[formField]` in templates too), each with what to do instead (set `value` in the model, use the
+  schema rule of the same name, or nothing for what Angular computes); signals passed as static
+  values, naming the `inputBinding` to use instead. And a warning when a group or array has
+  `inputs`, `bindings` or `directives` but no component to receive them.
+
+### Documentation
+
+- `layout()`: which signal reads re-run it (its own body, including data-driven `group()`
+  callbacks, which run right away; not `when`/`switchCase`, `array` item layouts or binding
+  closures), and how to choose what rebuilds the form with `untracked()`.
+- Inputs, bindings and directives: where each value goes, what's typed, and
+  `satisfies LayoutNodeOptions<typeof X>` for options built in a variable.
+- `when`/`switchCase`: a branch that stops being active takes the focused element with it; keep the
+  control that flips it outside the branch, or move focus after the flip.
+- The README and recipes use `component` and `inputs` throughout.
+
 ## [0.0.1-beta.2] - 2026-10-25
 
 ### Breaking
