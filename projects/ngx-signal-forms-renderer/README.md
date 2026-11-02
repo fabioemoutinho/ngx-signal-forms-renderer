@@ -33,7 +33,7 @@ import { provideSignalFormsRenderer } from 'ngx-signal-forms-renderer';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideSignalFormsRenderer({
-      types: {
+      components: {
         text: TextInputComponent,
         select: SelectInputComponent,
         textarea: TextareaInputComponent,
@@ -45,8 +45,10 @@ export const appConfig: ApplicationConfig = {
 
 ### 2. Define your form (signal forms)
 
+In a component, since `form()` needs an injection context:
+
 ```typescript
-import { signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { form, required, email } from '@angular/forms/signals';
 
 interface UserProfile {
@@ -55,45 +57,52 @@ interface UserProfile {
   role: string;
 }
 
-const model = signal<UserProfile>({ name: '', email: '', role: 'user' });
+@Component({ /* step 4 */ })
+export class ProfileFormComponent {
+  readonly model = signal<UserProfile>({ name: '', email: '', role: 'user' });
 
-const userForm = form(model, (f) => {
-  required(f.name);
-  email(f.email);
-});
+  readonly userForm = form(this.model, (f) => {
+    required(f.name);
+    email(f.email);
+  });
+}
 ```
 
 ### 3. Describe the layout
 
-Inputs to your components are passed as **`bindings`** using `inputBinding` from `@angular/core`
-(reactive — they also support `outputBinding` and `twoWayBinding`).
+Each node names its `component` (a registered key or a class) and passes fixed values as
+**`inputs`**. Values that change go in **`bindings`** (`inputBinding`, `outputBinding`,
+`twoWayBinding` from `@angular/core`). In the same component:
 
 ```typescript
-import { inputBinding } from '@angular/core';
 import { layout, control, group } from 'ngx-signal-forms-renderer';
 
-const userLayout = layout(userForm, (f) => [
-  group(
-    {
-      name: control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Full name')] }),
-      email: control(f.email, {
-        type: 'text',
-        bindings: [inputBinding('label', () => 'Email'), inputBinding('inputType', () => 'email')],
-      }),
-      role: control(f.role, {
-        type: 'select',
-        bindings: [inputBinding('label', () => 'Role'), inputBinding('options', () => ['user', 'editor', 'admin'])],
-      }),
-    },
-    { component: CardGroupComponent, bindings: [inputBinding('title', () => 'Personal info')] },
-  ),
-]);
+  readonly userLayout = layout(this.userForm, (f) => [
+    group(
+      {
+        name: control(f.name, { component: 'text', inputs: { label: 'Full name' } }),
+        email: control(f.email, { component: 'text', inputs: { label: 'Email' } }),
+        role: control(f.role, {
+          component: 'select',
+          inputs: { label: 'Role', options: ['user', 'editor', 'admin'] },
+        }),
+      },
+      { component: CardGroupComponent, inputs: { title: 'Personal info' } },
+    ),
+  ]);
 ```
 
 ### 4. Render it
 
-```html
-<sfr-form [layout]="userLayout" />
+```typescript
+import { SfrFormComponent } from 'ngx-signal-forms-renderer';
+
+@Component({
+  selector: 'app-profile-form',
+  imports: [SfrFormComponent],
+  template: `<sfr-form [layout]="userLayout" />`,
+})
+export class ProfileFormComponent { /* steps 2–3 */ }
 ```
 
 ## Core Concepts
@@ -128,40 +137,104 @@ component you write gets the real `FieldTree`, so it keeps full access to signal
 - **`when`** / **`switchCase`** — conditional layout (the layout's `@if` / `@switch`). They render
   the active branch's nodes and no element of their own.
 
-### Component resolution (two-tier)
+### Component resolution
 
-Every node resolves its component the same way:
-
-1. **Direct component reference** (`component`) — highest priority
-2. **String `type`** resolved via the registry from `provideSignalFormsRenderer({ types })`
+Every node names its component in one `component` option: a class, or a key registered with
+`provideSignalFormsRenderer({ components })`.
 
 ```typescript
-control(f.bio, { component: RichTextEditor });        // direct
-control(f.name, { type: 'text' });                    // from the registry
+control(f.bio, { component: RichTextEditor });        // a class
+control(f.name, { component: 'text' });               // a key from the registry
 ```
 
-### Bindings & directives
+### Inputs, bindings & directives
 
-Layout nodes carry `bindings` and `directives` instead of a plain props object — the same vocabulary
-the renderer uses internally. `inputBinding(name, value)` takes a **value accessor** (`() => value`):
-a signal already is one, so pass it directly; wrap plain/static values in `() => value`.
+**`inputs`** holds fixed values, keyed by the component's input names. When `component` is a class,
+they're type-checked against its signal inputs (`input()`, `model()`): an unknown name or a wrong
+value type is a compile error. With a registry key, or a class that may be a key, they're untyped.
+
+```typescript
+control(f.rating, { component: RatingComponent, inputs: { label: 'Rating', stars: 10 } });
+```
+
+- Each value is bound with `inputBinding`, so Angular decides where it goes: the component, or an
+  input the component exposes from its own `hostDirectives`. A name neither declares makes Angular
+  throw NG0315 in dev mode (in production it's ignored), as it does for `bindings`.
+- An aliased input (`input(5, { alias: 'maxValue' })`) is written by its property name; the renderer
+  binds it under its public name.
+- `undefined` values are skipped, so the component keeps its own default. The values are fixed: for
+  one that changes, bind a signal in `bindings`.
+- A signal is passed as the value itself, for an input that takes a signal; the component reads it.
+  Dev mode warns, since `bindings: [inputBinding(name, signal)]` is usually what's meant.
+- Inputs the renderer binds itself (`field`, `state`, `children`) are ignored, with a dev-mode
+  warning. So are, on a form control, the inputs the `FormField` directive sets from the field's
+  state (`value`, `required`, `disabled`, `min`, `max`, `minLength`, `maxLength`, `pattern`,
+  `errors`, …), as Angular rejects those bindings next to `[formField]` in templates too. Set them
+  through the form instead: `value` in the model, the others that have a schema rule with that rule
+  (`max(p.rating, 5)`, `disabled(p.rating)`); the rest (`errors`, `dirty`, …) Angular computes.
+- Required inputs (`input.required()`) aren't enforced by the type: a missing one compiles, and
+  Angular throws NG0950 when the component reads it.
+
+What's typed, and what goes through `bindings` instead:
+
+- Only signal inputs are typed. A decorator `@Input()` on a class that also has signal inputs, or a
+  `protected` input, goes through `bindings`.
+- Inputs a class exposes from its own `hostDirectives` aren't typed either (TypeScript can't see
+  decorator arguments): bind them with `bindings: [inputBinding('tooltip', () => 'Hi')]`.
+- A choice of classes (`component: compact ? RatingInput : TextInput`) accepts the inputs of any of
+  them. For an input only one of them has, write each class as its own node:
+
+  ```typescript
+  compact()
+    ? control(f.score, { component: RatingInput, inputs: { stars: 10 } })
+    : control(f.score, { component: TextInput, inputs: { placeholder: 'Score' } });
+  ```
+
+- Options built in a variable are checked with `satisfies`, which also keeps literal values like
+  `'email'` from widening to `string`:
+
+  ```typescript
+  const rating = { component: RatingComponent, inputs: { label: 'Rating' } } satisfies LayoutNodeOptions<typeof RatingComponent>;
+  ```
+
+**`directives`** attaches directives to the component, like `<my-comp tooltip>` in a template. A
+directive's inputs aren't reachable through the node's `inputs` or `bindings` (Angular aims those at
+the component), so each directive entry takes its own, untyped. An entry is the directive alone, or
+the directive with fixed `inputs` and changing `bindings`:
+
+```typescript
+directives: [TooltipDirective]                                                      // no inputs
+directives: [{ type: TooltipDirective, inputs: { text: 'Your work email' } }]       // fixed values
+directives: [{ type: TooltipDirective, bindings: [inputBinding('text', hint)] }]    // values that change
+```
+
+A directive entry's `inputs` use the directive's **public** names, the ones a template uses
+(`{ type: MatTooltip, inputs: { matTooltip: 'Hi' } }`), while a node's `inputs` use the component's
+**property** names. An entry's `bindings` are applied after its `inputs`. On a form control,
+`FormField` sets `required`, `disabled`, `max` and its other inputs (all but `value`/`checked`) on
+every directive that declares them, so those names are ignored on directive entries too.
+
+**`bindings`** are for values that change, and for outputs. `inputBinding(name, value)` takes a
+**value accessor** (`() => value`): a signal already is one, so pass it directly.
 
 ```typescript
 import { inputBinding, outputBinding } from '@angular/core';
 
 control(f.email, {
-  type: 'text',
+  component: 'text',
+  inputs: { label: 'Email' },                   // fixed value
   bindings: [
-    inputBinding('label', () => 'Email'),       // static input value — wrap in an accessor
     inputBinding('hint', hintSignal),           // a signal is already () => value — pass it directly
     outputBinding('focused', onFocus),          // output listener — pass the handler directly
   ],
-  directives: [TooltipDirective],               // host directives, conditionally if you like
+  directives: [TooltipDirective],               // directives, conditionally if you like
 });
 ```
 
-Consumer `bindings`/`directives` are merged *after* the renderer's own (the `field`/`state` inputs,
-or the `FormField` directive for `FormValueControl`/`FormCheckboxControl` components) — don't re-bind those.
+The renderer's own bindings come first (the `field`/`state`/`children` inputs, or the `FormField`
+directive for `FormValueControl`/`FormCheckboxControl` components), then `inputs`, then your
+`bindings` and `directives`. A binding for an input also set in `inputs` overrides it; don't re-bind
+the renderer's own inputs.
 
 ### Visibility
 
@@ -174,31 +247,33 @@ or the `FormField` directive for `FormValueControl`/`FormCheckboxControl` compon
 
 ```typescript
 // In the signal forms schema (semantic — also excluded from validation)
-const userForm = form(model, (f) => {
-  hidden(f.bio, { when: ({ valueOf }) => valueOf(f.role) !== 'admin' });
-});
+hidden(f.bio, { when: ({ valueOf }) => valueOf(f.role) !== 'admin' });
 
 // In the layout: the card renders while the bio field is visible
-when(f.bio, () => group({ bio: control(f.bio) }, { type: 'card' }));
+when(f.bio, () => group({ bio: control(f.bio) }, { component: 'card' }));
 ```
 
 Fields inside an inactive `when`/`switchCase` branch still validate, since a branch is layout only.
 Pair the branch with `hidden()` / `applyWhenValue()` in the schema when its fields shouldn't.
+
+A branch that stops being active is destroyed with its components; if the focused element was inside
+it, focus moves to the page. Keep the control that flips a branch outside it, or move focus yourself
+(see [RECIPES.md](./RECIPES.md#showing-and-hiding-which-tool)).
 
 See [RECIPES.md](./RECIPES.md) for which tool fits which case, wizard steps, and a sub-form per type.
 
 ## API Reference
 
 You build layouts with the functions below — you don't construct node objects by hand. `control`,
-`group` and `array` accept the same **options** object (`content` takes only `bindings` and
-`directives`; `when` and `switchCase` take none):
+`group` and `array` accept the same **options** object (`content` takes the component as its first
+argument, then `inputs`, `bindings` and `directives`; `when` and `switchCase` take none):
 
 | Option       | Type                                                | Purpose                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------- |
-| `component`  | `Type<unknown>`                                     | Render with this component (takes precedence).        |
-| `type`       | `string`                                            | Component registered via `provideSignalFormsRenderer`. |
-| `bindings`   | `Binding[]`                                          | Inputs/outputs (`inputBinding`/`outputBinding`/`twoWayBinding`). |
-| `directives` | `(Type<unknown> \| DirectiveWithBindings<unknown>)[]` | Host directives to attach.                            |
+| `component`  | `string \| Type<C>`                                  | A key registered via `provideSignalFormsRenderer`, or a class. |
+| `inputs`     | the component's inputs (typed for a class)          | Fixed input values.                                  |
+| `bindings`   | `Binding[]`                                          | Inputs/outputs that change (`inputBinding`/`outputBinding`/`twoWayBinding`). |
+| `directives` | `NodeDirective[]`                                    | Directives to attach: a class, or `{ type, inputs?, bindings? }`. |
 
 The builders return `LayoutNode`s — the only type you'll reference directly, as the `children` input
 on custom group/array wrapper components.
@@ -209,7 +284,7 @@ on custom group/array wrapper components.
 
 ```typescript
 control(f.name);
-control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] });
+control(f.name, { component: 'text', inputs: { label: 'Name' } });
 control(f.name, { component: CustomInput });
 ```
 
@@ -226,7 +301,8 @@ group({ name: control(f.name) }, { component: CardComponent });
 ```
 
 **Data-driven** — bound to a sub-object field; the callback receives that object's sub-fields. Use for
-a nested object (an address, etc.). The group also defers to the field's native `hidden()`.
+a nested object (an address, etc.). The group also defers to the field's native `hidden()`. The
+callback runs as part of the layout function, so a signal read inside it re-runs that function.
 
 ```typescript
 group(f.address, (g) => ({ street: control(g.street), city: control(g.city) }));
@@ -264,7 +340,7 @@ Library-iterated arrays (with or without a wrapper) also take an **`empty`** nod
 child while the array has no items — the layout's `@empty`:
 
 ```typescript
-array(f.items, { empty: content('hint', { bindings: [inputBinding('text', () => 'No items yet')] }) }, itemLayout);
+array(f.items, { empty: content('hint', { inputs: { text: 'No items yet' } }) }, itemLayout);
 ```
 
 **Renderer-owned** — the component receives the array `field` itself and does its own iteration and
@@ -274,14 +350,14 @@ mutation. Use when you want full control over how the array renders and changes.
 array(f.items, { component: ItemsListComponent });
 ```
 
-#### `content(typeOrComponent, { bindings?, directives? })`
+#### `content(component, { inputs?, bindings?, directives? })`
 
-A component that isn't bound to a field. Pass a component or a registered type. It receives only the
-`bindings` you give it — the renderer binds none of its own inputs. Read form state inside a binding
-to show derived values or form-level errors; the component updates in place.
+A component that isn't bound to a field. Pass a class or a registered key. It receives only the
+`inputs` and `bindings` you give it — the renderer binds none of its own. Read form state inside a
+binding to show derived values or form-level errors; the component updates in place.
 
 ```typescript
-content('heading', { bindings: [inputBinding('text', () => 'Billing')] });
+content('heading', { inputs: { text: 'Billing' } });
 content(FormErrors, { bindings: [inputBinding('errors', () => userForm().errorSummary())] });
 ```
 
@@ -295,7 +371,7 @@ only when the condition flips, so changing the values the condition reads keeps 
 ```typescript
 when(isBusiness, () => [control(f.company), control(f.vatId)]);
 when(() => f.country().value() === 'US', () => control(f.state), () => control(f.region));
-when(f.company, () => group({ company: control(f.company) }, { type: 'card' }));
+when(f.company, () => group({ company: control(f.company) }, { component: 'card' }));
 ```
 
 #### `switchCase(key, cases, { default? })`
@@ -320,36 +396,51 @@ form, use `when()` / `switchCase()` or the schema's `hidden()`.
 
 ```typescript
 const myLayout = layout(userForm, (f) => [
-  group({ name: control(f.name, { type: 'text' }) }),
+  group({ name: control(f.name, { component: 'text' }) }),
   array(f.items, (item) => group(item, (g) => ({ name: control(g.name) }))),
 ]);
+```
+
+Only reads in `fn`'s own body count, including data-driven `group(field, (g) => …)` callbacks, which
+run right away. `when()` / `switchCase()` conditions and branches, `array()` item layouts and binding
+closures run later, on their own. As in any `computed`, choose what rebuilds the form by reading those
+signals first and building the rest inside `untracked()`:
+
+```typescript
+const configured = layout(userForm, (f) => {
+  const { showPhone } = config(); // tracked: a config change rebuilds the form
+  return untracked(() => [
+    control(f.name, { component: 'text' }),
+    ...(showPhone ? [control(f.phone, { component: 'text' })] : []),
+  ]);
+});
 ```
 
 ### Provider
 
 ```typescript
 provideSignalFormsRenderer({
-  types: { text: TextInputComponent, select: SelectInputComponent, card: CardGroupComponent },
+  components: { text: TextInputComponent, select: SelectInputComponent, card: CardGroupComponent },
 });
 ```
 
 Registrations merge. Several calls in the same injector add up (a feature library can ship its own
 `provideSignalFormsRenderer` next to the app's), and a route's or component's registry extends its
-parent's — add or override types for one part of the app without repeating the rest. Where both
+parent's — add or override components for one part of the app without repeating the rest. Where both
 define a key, the child's wins. It works in `ApplicationConfig.providers`, route `providers` and
 component `providers`:
 
 ```typescript
 @Component({
-  providers: [provideSignalFormsRenderer({ types: { card: CompactCardComponent } })],
-  template: `<sfr-form [layout]="layout" />`, // `card` is compact here; other types come from the app
+  providers: [provideSignalFormsRenderer({ components: { card: CompactCardComponent } })],
+  template: `<sfr-form [layout]="layout" />`, // `card` is compact here; other keys come from the app
 })
 export class SidebarFormComponent {}
 ```
 
 Registering the same key twice in one injector logs a dev-mode warning (the last one wins). A node whose
-`type` isn't registered also warns: controls and content render nothing, groups and arrays render
-their children without a wrapper.
+`component` key isn't registered also warns: controls and content render nothing, groups and arrays
+render their children without a wrapper.
 
 ### Components
 
@@ -407,7 +498,7 @@ component **that declares those inputs** — so a control opts into exactly what
 export class TextInputComponent {
   readonly field = input.required<FieldTree<string>>();
   readonly state = input.required<FieldState<string>>(); // declare only if you read it
-  readonly label = input('');                            // from bindings
+  readonly label = input('');                            // from inputs or bindings
 }
 ```
 
@@ -419,7 +510,8 @@ A control that only binds via `[formField]` and shows no errors can declare just
 ```typescript
 export class RatingComponent implements FormValueControl<number> {
   readonly value = model(0);   // required — two-way bound by FormField
-  readonly label = input('');  // from bindings
+  readonly label = input('');  // from inputs or bindings
+  readonly stars = input(5);
 }
 ```
 
@@ -439,8 +531,8 @@ and `FormCheckboxControl` (`checked = model<boolean>()`).
 
 ### Group / array components
 
-Receive `children` (and any custom `bindings`). Render them with `<sfr-children>`, or iterate for
-custom placement.
+Receive `children` (and any `inputs` or `bindings` you give them). Render them with `<sfr-children>`,
+or iterate for custom placement.
 
 ```typescript
 export class StepperComponent {
@@ -466,8 +558,8 @@ Layouts are plain functions returning `LayoutNode[]`, so composition is just Typ
 ```typescript
 function addressFields(addr: FieldTree<Address>): Record<string, LayoutNode> {
   return {
-    street: control(addr.street, { type: 'text', bindings: [inputBinding('label', () => 'Street')] }),
-    city: control(addr.city, { type: 'text', bindings: [inputBinding('label', () => 'City')] }),
+    street: control(addr.street, { component: 'text', inputs: { label: 'Street' } }),
+    city: control(addr.city, { component: 'text', inputs: { label: 'City' } }),
   };
 }
 

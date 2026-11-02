@@ -4,8 +4,12 @@
 
 // Types
 export type {
+  ComponentInputs,
+  ComponentOrKey,
+  ComponentSignalInputs,
   LayoutNode,
   LayoutNodeOptions,
+  NodeDirective,
   ControlNode,
   GroupNode,
   ArrayNode,
@@ -21,7 +25,7 @@ export type { ArrayOptions, ContainerOptions, LayoutSignal, SwitchCaseKey } from
 
 // Provider
 export { provideSignalFormsRenderer } from './lib/provider';
-export type { SignalFormsRendererConfig, SignalFormsRendererTypeRegistry } from './lib/provider';
+export type { SignalFormsRendererConfig, SignalFormsRendererComponentRegistry } from './lib/provider';
 
 // Components and directives
 export { SfrFormComponent } from './lib/sfr-form.component';

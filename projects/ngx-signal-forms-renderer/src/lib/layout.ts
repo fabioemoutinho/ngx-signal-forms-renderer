@@ -1,7 +1,8 @@
-import { computed, Signal, Type } from '@angular/core';
+import { computed, Signal } from '@angular/core';
 import { FieldTree, isFieldTree } from '@angular/forms/signals';
 import {
   ArrayNode,
+  ComponentOrKey,
   ContentNode,
   ControlNode,
   GroupNode,
@@ -19,20 +20,23 @@ import {
  *
  * @example
  * control(f.name)
- * control(f.name, { type: 'text', bindings: [inputBinding('label', () => 'Name')] })
- * control(f.name, { component: CustomInput })
+ * control(f.name, { component: 'text', inputs: { label: 'Name' } })
+ * control(f.name, { component: CustomInput, bindings: [inputBinding('hint', () => hint())] })
  */
-export function control<T>(field: FieldTree<T>, options?: LayoutNodeOptions): ControlNode<T> {
-  return { kind: 'control', field, ...options };
+export function control<T, K extends ComponentOrKey = ComponentOrKey>(
+  field: FieldTree<T>,
+  options?: LayoutNodeOptions<K>,
+): ControlNode<T> {
+  return { ...options, kind: 'control', field };
 }
 
 // ── Shared options ────────────────────────────────────────────────────────
 
 /** Options for group() and array() builders. */
-export type ContainerOptions = LayoutNodeOptions;
+export type ContainerOptions<K extends ComponentOrKey = ComponentOrKey> = LayoutNodeOptions<K>;
 
 /** Options for a library-iterated array(): container options plus an `empty` node. */
-export interface ArrayOptions extends ContainerOptions {
+export interface ArrayOptions<K extends ComponentOrKey = ComponentOrKey> extends ContainerOptions<K> {
   /** Rendered (as the only child) while the array has no items — the layout's `@empty`. */
   empty?: LayoutNode;
 }
@@ -41,20 +45,18 @@ export interface ArrayOptions extends ContainerOptions {
 
 /**
  * Creates a ContentNode: a component that isn't bound to a field (a heading, help text, an
- * alert, form-level errors, a derived value). Pass a component or a type registered via
- * `provideSignalFormsRenderer()`. It receives only the given `bindings`.
+ * alert, form-level errors, a derived value). Pass a component class or a key registered via
+ * `provideSignalFormsRenderer()`. It receives only the given `inputs` and `bindings`.
  *
  * @example
- * content('heading', { bindings: [inputBinding('text', () => 'Billing')] })
+ * content('heading', { inputs: { text: 'Billing' } })
  * content(FormErrors, { bindings: [inputBinding('errors', () => userForm().errorSummary())] })
  */
-export function content(
-  typeOrComponent: string | Type<unknown>,
-  options?: Pick<LayoutNodeOptions, 'bindings' | 'directives'>,
+export function content<K extends ComponentOrKey>(
+  component: K,
+  options?: Pick<LayoutNodeOptions<K>, 'inputs' | 'bindings' | 'directives'>,
 ): ContentNode {
-  const resolution =
-    typeof typeOrComponent === 'string' ? { type: typeOrComponent } : { component: typeOrComponent };
-  return { kind: 'content', ...options, ...resolution };
+  return { kind: 'content', ...options, component };
 }
 
 // ── group() ────────────────────────────────────────────────────────────────
@@ -69,15 +71,18 @@ export function content(
  * @example
  * // Explicit children
  * group({ name: control(f.name), email: control(f.email) })
- * group({ name: control(f.name) }, { component: CardComponent, bindings: [inputBinding('title', () => 'Info')] })
+ * group({ name: control(f.name) }, { component: CardComponent, inputs: { title: 'Info' } })
  *
  * // Data-driven sub-object field
- * group(f.address, (g) => ({ street: control(g.street, { type: 'text' }) }))
+ * group(f.address, (g) => ({ street: control(g.street, { component: 'text' }) }))
  * group(f.address, { component: AddressCard }, (g) => ({ street: control(g.street) }))
+ *
+ * The data-driven callback runs right away, as part of the enclosing layout function: a signal
+ * read inside it re-runs that whole function (see `layout()`).
  */
-export function group(children: Record<string, LayoutNode>, options?: ContainerOptions): GroupNode;
+export function group<K extends ComponentOrKey = ComponentOrKey>(children: Record<string, LayoutNode>, options?: ContainerOptions<K>): GroupNode;
 export function group<T>(field: FieldTree<T>, fn: (g: FieldTree<T>) => Record<string, LayoutNode>): GroupNode;
-export function group<T>(field: FieldTree<T>, options: ContainerOptions, fn: (g: FieldTree<T>) => Record<string, LayoutNode>): GroupNode;
+export function group<T, K extends ComponentOrKey = ComponentOrKey>(field: FieldTree<T>, options: ContainerOptions<K>, fn: (g: FieldTree<T>) => Record<string, LayoutNode>): GroupNode;
 export function group<T>(
   fieldOrChildren: FieldTree<T> | Record<string, LayoutNode>,
   optionsOrFn?: ContainerOptions | ((g: FieldTree<T>) => Record<string, LayoutNode>),
@@ -115,18 +120,18 @@ export function group<T>(
  * array(f.items, { component: BudgetListComponent })
  *
  * // Library iterates — per-item fn, no wrapper component
- * array(f.items, (item) => group(item, (g) => ({ name: control(g.name, { type: 'text' }) })))
+ * array(f.items, (item) => group(item, (g) => ({ name: control(g.name, { component: 'text' }) })))
  *
  * // Library iterates — per-item fn + wrapper component that receives children
  * array(f.items, { component: SortableList, bindings: [outputBinding('moved', onMove)] }, (item) => group(item, ...))
  *
  * // Library iterates — with a node rendered while there are no items
- * array(f.items, { empty: content('hint', { bindings: [inputBinding('text', () => 'No items yet')] }) }, (item) => ...)
+ * array(f.items, { empty: content('hint', { inputs: { text: 'No items yet' } }) }, (item) => ...)
  */
-export function array(children: LayoutNode[], options?: ContainerOptions): ArrayNode;
-export function array<T>(field: FieldTree<T[]>, options?: ContainerOptions): ArrayNode;
+export function array<K extends ComponentOrKey = ComponentOrKey>(children: LayoutNode[], options?: ContainerOptions<K>): ArrayNode;
+export function array<T, K extends ComponentOrKey = ComponentOrKey>(field: FieldTree<T[]>, options?: ContainerOptions<K>): ArrayNode;
 export function array<T>(field: FieldTree<T[]>, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
-export function array<T>(field: FieldTree<T[]>, options: ArrayOptions, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
+export function array<T, K extends ComponentOrKey = ComponentOrKey>(field: FieldTree<T[]>, options: ArrayOptions<K>, fn: (item: FieldTree<T>) => LayoutNode): ArrayNode;
 export function array<T>(
   fieldOrChildren: FieldTree<T[]> | LayoutNode[],
   optionsOrFn?: ArrayOptions | ((item: FieldTree<T>) => LayoutNode),
@@ -240,11 +245,26 @@ export function switchCase(
  * re-render only what changes, and values can be read inside binding closures
  * (`inputBinding('label', () => …)`).
  *
+ * Only reads in `fn`'s own body count, including data-driven `group()` callbacks, which run right
+ * away. `when()`/`switchCase()` conditions and branches, `array()` item layouts and binding
+ * closures run later, on their own. To choose what rebuilds the form, read those signals first
+ * and build the rest inside `untracked()`, as in any `computed`.
+ *
  * @example
  * const myLayout = layout(userForm, (f) => [
- *   group({ name: control(f.name, { type: 'text' }) }),
+ *   group({ name: control(f.name, { component: 'text' }) }),
  *   array(f.items, (item) => group(item, (g) => ({ name: control(g.name) }))),
  * ]);
+ *
+ * // Rebuilt when `config` changes, whatever the helpers called inside untracked() read
+ * const configured = layout(userForm, (f) => {
+ *   const { showPhone } = config();
+ *   return untracked(() => [
+ *     control(f.name),
+ *     ...(showPhone ? [control(f.phone)] : []),
+ *     ...extraNodes(f),
+ *   ]);
+ * });
  */
 export type LayoutSignal = Signal<LayoutNode[]>;
 

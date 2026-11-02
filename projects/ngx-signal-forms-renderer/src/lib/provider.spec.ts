@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { form } from '@angular/forms/signals';
 import { control, group, layout, LayoutSignal } from './layout';
-import { provideSignalFormsRenderer, SIGNAL_FORMS_RENDERER_TYPE_REGISTRY } from './provider';
+import { provideSignalFormsRenderer, SIGNAL_FORMS_RENDERER_REGISTRY } from './provider';
 import { SfrFormComponent } from './sfr-form.component';
 import {
   CardWrapper,
@@ -24,18 +24,18 @@ class OtherComp {}
 
 const registryOf = (providers: Parameters<typeof TestBed.configureTestingModule>[0]['providers']) => {
   TestBed.configureTestingModule({ providers });
-  return TestBed.inject(SIGNAL_FORMS_RENDERER_TYPE_REGISTRY);
+  return TestBed.inject(SIGNAL_FORMS_RENDERER_REGISTRY);
 };
 
 describe('provideSignalFormsRenderer()', () => {
-  it('provides the type registry', () => {
+  it('provides the component registry', () => {
     const registry = registryOf([
-      provideSignalFormsRenderer({ types: { text: TextComp as never, select: SelectComp as never } }),
+      provideSignalFormsRenderer({ components: { text: TextComp as never, select: SelectComp as never } }),
     ]);
     expect(registry).toEqual({ text: TextComp, select: SelectComp });
   });
 
-  it('provides an empty registry when no types are given, or nothing is provided', () => {
+  it('provides an empty registry when no components are given, or nothing is provided', () => {
     expect(registryOf([provideSignalFormsRenderer()])).toEqual({});
     TestBed.resetTestingModule();
     expect(registryOf([provideSignalFormsRenderer({})])).toEqual({});
@@ -45,8 +45,8 @@ describe('provideSignalFormsRenderer()', () => {
 
   it('merges several calls in the same injector', () => {
     const registry = registryOf([
-      provideSignalFormsRenderer({ types: { text: TextComp as never } }),
-      provideSignalFormsRenderer({ types: { select: SelectComp as never } }),
+      provideSignalFormsRenderer({ components: { text: TextComp as never } }),
+      provideSignalFormsRenderer({ components: { select: SelectComp as never } }),
     ]);
     expect(registry).toEqual({ text: TextComp, select: SelectComp });
   });
@@ -54,19 +54,19 @@ describe('provideSignalFormsRenderer()', () => {
   it('warns once, listing the keys, when the same injector registers a key twice; the last wins', () => {
     const { warn, count } = spyWarn();
     const registry = registryOf([
-      provideSignalFormsRenderer({ types: { text: TextComp as never, select: SelectComp as never } }),
-      provideSignalFormsRenderer({ types: { text: OtherComp as never, select: OtherComp as never } }),
+      provideSignalFormsRenderer({ components: { text: TextComp as never, select: SelectComp as never } }),
+      provideSignalFormsRenderer({ components: { text: OtherComp as never, select: OtherComp as never } }),
     ]);
     expect(registry).toEqual({ text: OtherComp, select: OtherComp });
-    expect(count('registered more than once in the same injector: text, select')).toBe(1);
+    expect(count('Components registered more than once in the same injector: text, select')).toBe(1);
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('does not warn when the same component is registered twice under one key', () => {
     const { warn } = spyWarn();
     registryOf([
-      provideSignalFormsRenderer({ types: { text: TextComp as never } }),
-      provideSignalFormsRenderer({ types: { text: TextComp as never } }),
+      provideSignalFormsRenderer({ components: { text: TextComp as never } }),
+      provideSignalFormsRenderer({ components: { text: TextComp as never } }),
     ]);
     expect(warn).not.toHaveBeenCalled();
   });
@@ -74,14 +74,14 @@ describe('provideSignalFormsRenderer()', () => {
   it("extends the parent injector's registry; the child wins, without a warning", () => {
     const { warn } = spyWarn();
     const parent = registryOf([
-      provideSignalFormsRenderer({ types: { text: TextComp as never, select: SelectComp as never } }),
+      provideSignalFormsRenderer({ components: { text: TextComp as never, select: SelectComp as never } }),
     ]);
     const child = createEnvironmentInjector(
-      [provideSignalFormsRenderer({ types: { select: OtherComp as never } })],
+      [provideSignalFormsRenderer({ components: { select: OtherComp as never } })],
       TestBed.inject(EnvironmentInjector),
     );
 
-    expect(child.get(SIGNAL_FORMS_RENDERER_TYPE_REGISTRY)).toEqual({ text: TextComp, select: OtherComp });
+    expect(child.get(SIGNAL_FORMS_RENDERER_REGISTRY)).toEqual({ text: TextComp, select: OtherComp });
     expect(parent).toEqual({ text: TextComp, select: SelectComp });
     expect(warn).not.toHaveBeenCalled();
   });
@@ -90,7 +90,7 @@ describe('provideSignalFormsRenderer()', () => {
     @Component({
       selector: 'test-scoped-form',
       imports: [SfrFormComponent],
-      providers: [provideSignalFormsRenderer({ types: { card: FieldWrapper } })],
+      providers: [provideSignalFormsRenderer({ components: { card: FieldWrapper } })],
       template: `<sfr-form [layout]="layout()" />`,
     })
     class ScopedForm {
@@ -107,12 +107,12 @@ describe('provideSignalFormsRenderer()', () => {
     class Host {
       readonly f = form(signal({ a: 'x' }));
       readonly l = layout(this.f, (f) => [
-        group({ a: control(f.a, { type: 'text' }) }, { type: 'card' }),
+        group({ a: control(f.a, { component: 'text' }) }, { component: 'card' }),
       ]);
     }
 
     TestBed.configureTestingModule({
-      providers: [provideSignalFormsRenderer({ types: { text: TrackedControl, card: CardWrapper } })],
+      providers: [provideSignalFormsRenderer({ components: { text: TrackedControl, card: CardWrapper } })],
     });
     const fixture = TestBed.createComponent(Host);
     await fixture.whenStable();

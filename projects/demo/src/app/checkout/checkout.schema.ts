@@ -7,7 +7,8 @@ export interface FieldConfig {
   type: 'text' | 'select' | 'textarea' | 'checkbox' | 'rating';
   label?: string;
   placeholder?: string;
-  inputType?: string;
+  /** Text-like types only: the text control doesn't take date or time types. */
+  inputType?: 'text' | 'email' | 'tel' | 'url' | 'search' | 'password';
   options?: string[];
 }
 
