@@ -8,6 +8,8 @@ may contain breaking changes; they are always called out under **Breaking**.
 
 ## [Unreleased]
 
+## [0.0.1-beta.3] - 2026-11-02
+
 ### Breaking
 
 - Nodes name their component in one option, `component`, which now takes a registered key or a
@@ -100,16 +102,18 @@ may contain breaking changes; they are always called out under **Breaking**.
   values, naming the `inputBinding` to use instead. And a warning when a group or array has
   `inputs`, `bindings` or `directives` but no component to receive them.
 
-### Documentation
+### Changed
 
-- `layout()`: which signal reads re-run it (its own body, including data-driven `group()`
-  callbacks, which run right away; not `when`/`switchCase`, `array` item layouts or binding
-  closures), and how to choose what rebuilds the form with `untracked()`.
-- Inputs, bindings and directives: where each value goes, what's typed, and
-  `satisfies LayoutNodeOptions<typeof X>` for options built in a variable.
-- `when`/`switchCase`: a branch that stops being active takes the focused element with it; keep the
-  control that flips it outside the branch, or move focus after the flip.
-- The README and recipes use `component` and `inputs` throughout.
+- Documentation (README, RECIPES), no behaviour change:
+  - `layout()`: which signal reads re-run it (its own body, including data-driven `group()`
+    callbacks, which run right away; not `when`/`switchCase`, `array` item layouts or binding
+    closures), and how to choose what rebuilds the form with `untracked()`.
+  - Inputs, bindings and directives: where each value goes, what's typed, and
+    `satisfies LayoutNodeOptions<typeof X>` for options built in a variable.
+  - `when`/`switchCase`: a branch that stops being active takes the focused element with it; keep
+    the control that flips it outside the branch, or move focus after the flip.
+  - The README and recipes use `component` and `inputs` throughout, and the Quick Start builds the
+    form inside a component.
 
 ## [0.0.1-beta.2] - 2026-10-25
 
@@ -243,7 +247,8 @@ may contain breaking changes; they are always called out under **Breaking**.
   visibility deferring to the field's native `hidden()` or a node-level `hidden` signal.
 - `<sfr-children>` helper for custom group/array wrapper components.
 
-[Unreleased]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.2...HEAD
+[Unreleased]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.3...HEAD
+[0.0.1-beta.3]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.2...v0.0.1-beta.3
 [0.0.1-beta.2]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.1...v0.0.1-beta.2
 [0.0.1-beta.1]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/compare/v0.0.1-beta.0...v0.0.1-beta.1
 [0.0.1-beta.0]: https://github.com/fabioemoutinho/ngx-signal-forms-renderer/releases/tag/v0.0.1-beta.0
